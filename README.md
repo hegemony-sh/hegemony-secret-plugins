@@ -87,7 +87,13 @@ gh attestation verify hegemony_secret_1password-${VERSION}-py3-none-any.whl \
 
 Attestations are bound to the repository path at publish time: wheels from
 releases published before the move to the `hegemony-sh` organization verify
-with `--repo tvarohohlavy/hegemony-secret-plugins` instead.
+with `--repo tvarohohlavy/hegemony-secret-plugins` instead. Releases cut while
+this repository is private carry no attestation at all — the feature needs a
+public repository or an Enterprise plan — so `gh attestation verify` has
+nothing to check on them until the repository is public. `SHA256SUMS` still
+ships beside those assets, but it checks integrity against a manifest
+published in the same release rather than provenance, so treat it as a
+consistency check and not as a stand-in for attestation.
 
 Or build local wheels from this repository and copy them into the running dev containers:
 
@@ -156,4 +162,7 @@ the matching GitHub Release.
 Releases are intended to be immutable: the release workflow fails if a GitHub Release for
 the tag already exists and never replaces published assets. If a release artifact is wrong,
 cut a new patch tag instead of mutating the existing release. The release workflow also
-creates GitHub artifact attestations for the wheel files and checksum file.
+creates GitHub artifact attestations for the wheel files and checksum file,
+but only for public releases: attestation needs a public repository or an
+Enterprise plan, so releases cut while this repository is private ship
+checksums only.
