@@ -89,8 +89,11 @@ Attestations are bound to the repository path at publish time: wheels from
 releases published before the move to the `hegemony-sh` organization verify
 with `--repo tvarohohlavy/hegemony-secret-plugins` instead. Releases cut while
 this repository is private carry no attestation at all — the feature needs a
-public repository or an Enterprise plan — so verify those against
-`SHA256SUMS`.
+public repository or an Enterprise plan — so `gh attestation verify` has
+nothing to check on them until the repository is public. `SHA256SUMS` still
+ships beside those assets, but it checks integrity against a manifest
+published in the same release rather than provenance, so treat it as a
+consistency check and not as a stand-in for attestation.
 
 Or build local wheels from this repository and copy them into the running dev containers:
 
