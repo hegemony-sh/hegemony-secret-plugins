@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Tests for the Vault secret backend plugin: registration + backend behavior via hvac mocks."""
+"""Tests for the Vault/OpenBao secret backend plugin: registration + behavior via hvac mocks."""
 
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -24,9 +24,11 @@ class FakeRegistry:
 def test_register_adds_expected_backend_types():
     reg = FakeRegistry()
     plugin.register(reg)
-    assert set(reg.types) == {"vault", "vault_kv2"}
+    assert set(reg.types) == {"vault", "vault_kv2", "openbao"}
     assert reg.types["vault"]["factory"] is plugin.build_vault_backend
     assert reg.types["vault_kv2"]["factory"] is plugin.build_vault_backend
+    # A distinct callable, so OpenBao's construction can diverge without touching Vault.
+    assert reg.types["openbao"]["factory"] is plugin.build_openbao_backend
     for entry in reg.types.values():
         assert entry["config_schema"]["type"] == "object"
         assert entry["config_schema"]["required"] == ["address"]
@@ -48,6 +50,7 @@ def test_register_display_names():
     plugin.register(reg)
     assert reg.types["vault"]["display_name"] == "HashiCorp Vault (KV v2)"
     assert reg.types["vault_kv2"]["display_name"] == "HashiCorp Vault (KV v2, legacy type)"
+    assert reg.types["openbao"]["display_name"] == "OpenBao (KV v2)"
 
 
 def test_register_marks_only_vault_kv2_hidden():
@@ -57,6 +60,7 @@ def test_register_marks_only_vault_kv2_hidden():
     plugin.register(reg)
     assert reg.types["vault_kv2"].get("hidden") is True
     assert reg.types["vault"].get("hidden", False) is False
+    assert reg.types["openbao"].get("hidden", False) is False
 
 
 def test_register_satisfies_sdk_registry_protocol():
@@ -74,8 +78,6 @@ def test_config_schema_marks_auth_material_as_secret_refs():
         "token",
         "role_id",
         "secret_id",
-        "role_id_file",
-        "secret_id_file",
         "api_role_id",
         "api_secret_id",
         "worker_role_id",
@@ -84,6 +86,26 @@ def test_config_schema_marks_auth_material_as_secret_refs():
         assert properties[field].get("x_secret_ref") is True, field
     assert "x_secret_ref" not in properties["address"]
     assert properties["verify_ssl"]["type"] == "boolean"
+
+
+def test_config_schema_does_not_mark_credential_paths_as_secret_refs():
+    # A filesystem path is not secret material. Marking it x_secret_ref would drag it into
+    # the host's no-plaintext policy, which accepts only placeholder expressions -- making
+    # a literal path (the only useful value for these fields) fail validation outright.
+    reg = FakeRegistry()
+    plugin.register(reg)
+    properties = reg.types["vault"]["config_schema"]["properties"]
+    for field in (
+        "role_id_file",
+        "secret_id_file",
+        "api_role_id_file",
+        "api_secret_id_file",
+        "worker_role_id_file",
+        "worker_secret_id_file",
+        "ca_cert_file",
+    ):
+        assert "x_secret_ref" not in properties[field], field
+        assert properties[field]["type"] == "string", field
 
 
 def test_config_schema_includes_per_component_approle_overrides():
@@ -111,6 +133,39 @@ def test_config_schema_marks_component_overrides_with_fallback_of():
     assert properties["worker_secret_id"]["x_fallback_of"] == "secret_id"
     assert "x_fallback_of" not in properties["role_id"]
     assert "x_fallback_of" not in properties["secret_id"]
+
+
+def test_config_schema_includes_per_component_credential_file_overrides():
+    # Credential *files* need the same per-component split as the value fields, or a
+    # deployment where the API and worker hold separate AppRoles cannot use the
+    # re-read-on-login path that makes rotation work.
+    reg = FakeRegistry()
+    plugin.register(reg)
+    properties = reg.types["vault"]["config_schema"]["properties"]
+    expected = {
+        "api_role_id_file": ("role_id_file", "api"),
+        "api_secret_id_file": ("secret_id_file", "api"),
+        "worker_role_id_file": ("role_id_file", "worker"),
+        "worker_secret_id_file": ("secret_id_file", "worker"),
+    }
+    for field, (base, component) in expected.items():
+        assert properties[field]["x_fallback_of"] == base, field
+        assert properties[field]["x_component"] == component, field
+    assert "x_component" not in properties["role_id_file"]
+    assert "x_component" not in properties["secret_id_file"]
+
+
+def test_openbao_schema_shares_property_names_with_vault():
+    # The host keys its per-component override handling and its sensitive-field policy off
+    # property NAMES, so the two products must expose an identical set; only the
+    # human-facing labels may differ.
+    reg = FakeRegistry()
+    plugin.register(reg)
+    vault_props = reg.types["vault"]["config_schema"]["properties"]
+    openbao_props = reg.types["openbao"]["config_schema"]["properties"]
+    assert set(vault_props) == set(openbao_props)
+    assert openbao_props["address"]["title"] == "OpenBao address"
+    assert vault_props["address"]["title"] == "Vault address"
 
 
 @patch("hvac.Client")
@@ -263,7 +318,9 @@ def test_approle_non_expiring_token_authenticates_once():
     """lease_duration 0 = a token that never expires; it must not force a fresh
     AppRole login (and a new Vault token) on every single operation."""
     backend, mock_client = _approle_backend_with_mock_client(role_id="rid", secret_id="sid")
-    mock_client.auth.approle.login.return_value = {"auth": {"lease_duration": 0}}
+    mock_client.auth.approle.login.return_value = {
+        "auth": {"lease_duration": 0, "client_token": "minted-token"}
+    }
     mock_client.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {"k": "v"}}}
 
     backend.read("a/b")
@@ -274,7 +331,9 @@ def test_approle_non_expiring_token_authenticates_once():
 
 def test_approle_positive_lease_reuses_token_within_ttl():
     backend, mock_client = _approle_backend_with_mock_client(role_id="rid", secret_id="sid")
-    mock_client.auth.approle.login.return_value = {"auth": {"lease_duration": 3600}}
+    mock_client.auth.approle.login.return_value = {
+        "auth": {"lease_duration": 3600, "client_token": "minted-token"}
+    }
     mock_client.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {"k": "v"}}}
 
     backend.read("a/b")
@@ -293,7 +352,9 @@ def test_approle_reauth_rereads_credential_files(tmp_path):
     backend, mock_client = _approle_backend_with_mock_client(
         role_id_file=str(role_file), secret_id_file=str(secret_file)
     )
-    mock_client.auth.approle.login.return_value = {"auth": {"lease_duration": 3600}}
+    mock_client.auth.approle.login.return_value = {
+        "auth": {"lease_duration": 3600, "client_token": "minted-token"}
+    }
     mock_client.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {}}}
 
     backend.read("a/b")
@@ -352,3 +413,63 @@ def test_test_fallback_raises_on_real_failure():
         raise AssertionError("expected VaultError")
     except VaultError:
         pass
+
+
+# --- client construction hardening -------------------------------------------------
+
+
+def _client_kwargs_for(**config_overrides) -> dict[str, Any]:
+    config = VaultBackendConfig.from_dict({"address": "https://openbao:8200", **config_overrides})
+    with patch("hvac.Client") as mock_client_cls:
+        mock_client_cls.return_value = MagicMock()
+        VaultSecretsBackend(config)
+    return dict(mock_client_cls.call_args.kwargs)
+
+
+def test_client_is_built_with_a_request_timeout():
+    # Unbounded requests let an unresponsive server pin the calling thread indefinitely.
+    assert _client_kwargs_for(token="tok")["timeout"] == 30
+    assert _client_kwargs_for(token="tok", timeout=5)["timeout"] == 5
+
+
+def test_client_is_built_with_the_configured_namespace():
+    assert _client_kwargs_for(token="tok")["namespace"] is None
+    assert _client_kwargs_for(token="tok", namespace="team-a")["namespace"] == "team-a"
+    # Blank namespaces are normalized away rather than sent as an empty header.
+    assert _client_kwargs_for(token="tok", namespace="  ")["namespace"] is None
+
+
+def test_approle_auth_clears_any_ambient_environment_token():
+    """hvac falls back to VAULT_TOKEN when constructed without a token.
+
+    On the AppRole path that would let a stray environment variable authenticate this
+    backend, and keep it working after the configured AppRole stopped being valid -- so
+    the construction must clear it. The only token this backend may use is one it minted.
+    """
+    _, mock_client = _approle_backend_with_mock_client(role_id="rid", secret_id="sid")
+    assert mock_client.token is None
+
+
+def test_static_token_auth_still_sets_the_configured_token():
+    _, mock_client = _backend_with_mock_client()
+    assert mock_client.token == "tok"
+
+
+def test_vault_backend_config_timeout_and_namespace_defaults():
+    config = VaultBackendConfig(address="https://openbao:8200")
+    assert config.timeout == 30
+    assert config.namespace is None
+
+
+def test_approle_login_stores_the_minted_client_token():
+    # Load-bearing: the AppRole path starts from token=None, so if the minted token were
+    # not stored the client would re-authenticate on every single operation.
+    backend, mock_client = _approle_backend_with_mock_client(role_id="rid", secret_id="sid")
+    mock_client.auth.approle.login.return_value = {
+        "auth": {"lease_duration": 3600, "client_token": "minted-token"}
+    }
+    mock_client.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {}}}
+
+    backend.read("a/b")
+
+    assert mock_client.token == "minted-token"

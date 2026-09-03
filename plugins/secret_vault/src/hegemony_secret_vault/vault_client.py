@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 # Token expiry buffer in seconds - refresh token this many seconds before expiry
 TOKEN_EXPIRY_BUFFER_SECONDS = 60
 
+# Per-request timeout. Unbounded requests let an unresponsive server pin the calling
+# thread indefinitely, which in the worker means losing a slot per stuck resolution.
+DEFAULT_TIMEOUT_SECONDS = 30
+
 
 def _normalize_auth_value(value: Any) -> str | None:
     """Normalize line-oriented Vault auth material from env/file placeholders."""
@@ -50,6 +54,8 @@ class VaultBackendConfig:
         secret_id_file: Path to file containing secret ID
         ca_cert_file: Optional path to CA certificate for TLS
         verify_ssl: Whether to verify SSL certificates (default: True)
+        namespace: Optional namespace to scope every request to (OpenBao / Vault Enterprise)
+        timeout: Per-request timeout in seconds
     """
 
     address: str
@@ -62,6 +68,8 @@ class VaultBackendConfig:
     secret_id_file: str | None = None
     ca_cert_file: str | None = None
     verify_ssl: bool = True
+    namespace: str | None = None
+    timeout: int = DEFAULT_TIMEOUT_SECONDS
 
     @classmethod
     def from_dict(cls, config: dict) -> VaultBackendConfig:
@@ -91,6 +99,8 @@ class VaultBackendConfig:
             secret_id_file=config.get("secret_id_file"),
             ca_cert_file=config.get("ca_cert_file"),
             verify_ssl=config.get("verify_ssl", config.get("verify", True)),
+            namespace=_normalize_auth_value(config.get("namespace")),
+            timeout=int(config.get("timeout") or DEFAULT_TIMEOUT_SECONDS),
         )
 
 
@@ -148,16 +158,28 @@ class VaultSecretsBackend:
         if config.verify_ssl and config.ca_cert_file:
             verify = config.ca_cert_file
 
-        self._client = hvac.Client(url=config.address, verify=verify)
+        self._client = hvac.Client(
+            url=config.address,
+            verify=verify,
+            timeout=config.timeout,
+            namespace=config.namespace,
+        )
 
         if self._use_token_auth:
             # Token auth (dev mode) - use static token directly
             logger.debug("Using static token auth for Vault")
             self._client.token = self._static_token
         else:
+            # hvac.Client falls back to the VAULT_TOKEN environment variable when it is
+            # constructed without a token. On the AppRole path that would let a stray
+            # environment variable silently authenticate this backend -- and keep it
+            # working after the configured AppRole stopped being valid, hiding the
+            # breakage rather than surfacing it. Clear it: the only token this backend may
+            # use is one _authenticate() minted from the configured role.
+            self._client.token = None
             # AppRole auth (production) - resolve once now to fail fast on
             # misconfiguration; _authenticate() re-resolves per login so rotated
-            # *_file contents (e.g. a Vault Agent sidecar re-writing the
+            # *_file contents (e.g. a credential-rotating sidecar re-writing the
             # secret-id file) are picked up without a client rebuild.
             self._resolve_approle_credentials()
 
@@ -278,8 +300,17 @@ class VaultSecretsBackend:
                 secret_id=secret_id,
             )
 
-            # Extract token TTL and set expiry
             auth_data = response.get("auth", {})
+
+            # Store the minted token explicitly. hvac's login() also stores it on the
+            # adapter as a side effect, but this class treats a falsy client token as
+            # "not authenticated yet" (see _is_token_valid_unlocked), and the AppRole
+            # path deliberately starts from token=None -- so the two must not drift.
+            client_token = auth_data.get("client_token")
+            if client_token:
+                self._client.token = client_token
+
+            # Extract token TTL and set expiry
             lease_duration = auth_data.get("lease_duration", 3600)
             if lease_duration and lease_duration > 0:
                 self._token_expiry = time.time() + lease_duration

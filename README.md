@@ -30,8 +30,9 @@ Contributions require the [Hegemony Contributor License Agreement](CLA.md). See
 ## What is auto-installed vs opt-in
 
 - **Auto-installed** with the platform (already present in Hegemony API and worker
-  images): `hegemony-secret-sdk` and `hegemony-secret-vault` (the built-in HashiCorp
-  Vault KV v2 backend — `vault` / `vault_kv2` / `vault_kv1` backend types). See its
+  images): `hegemony-secret-sdk` and `hegemony-secret-vault` (the built-in KV v2
+  backends — `vault`, the hidden legacy alias `vault_kv2`, and `openbao`). One `hvac`
+  client serves both products because OpenBao keeps Vault's HTTP API. See its
   [README](plugins/secret_vault/README.md).
 - **Opt-in**: `hegemony-secret-1password` adds the 1Password backend
   (`onepassword_connect` / `onepassword_service_account` backend types). Install it in any
