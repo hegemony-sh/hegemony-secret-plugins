@@ -473,3 +473,81 @@ def test_approle_login_stores_the_minted_client_token():
     backend.read("a/b")
 
     assert mock_client.token == "minted-token"
+
+
+# --- config normalization and failure surfacing --------------------------------------
+
+
+def test_timeout_accepts_numeric_strings_and_blank_values():
+    # Backend config arrives as JSON from the host's database and may have been through
+    # templating, so a bare int() here can meet whitespace and blow up opaquely.
+    assert VaultBackendConfig.from_dict({"address": "https://openbao:8200"}).timeout == 30
+    assert (
+        VaultBackendConfig.from_dict({"address": "https://openbao:8200", "timeout": "45"}).timeout
+        == 45
+    )
+    assert (
+        VaultBackendConfig.from_dict({"address": "https://openbao:8200", "timeout": "  "}).timeout
+        == 30
+    )
+
+
+def test_timeout_rejects_junk_and_non_positive_values():
+    for bad in ("soon", 0, -5, "0"):
+        try:
+            VaultBackendConfig.from_dict({"address": "https://openbao:8200", "timeout": bad})
+        except ValueError as exc:
+            assert "timeout" in str(exc).lower(), bad
+        else:
+            raise AssertionError(f"expected ValueError for timeout={bad!r}")
+
+
+def test_schema_timeout_default_matches_the_runtime_default():
+    # Two hardcoded copies of the same number drift; the schema must derive from the one
+    # the client actually applies.
+    from hegemony_secret_vault.vault_client import DEFAULT_TIMEOUT_SECONDS
+
+    reg = FakeRegistry()
+    plugin.register(reg)
+    properties = reg.types["vault"]["config_schema"]["properties"]
+    assert properties["timeout"]["default"] == DEFAULT_TIMEOUT_SECONDS
+
+
+def test_approle_login_without_a_token_raises_instead_of_looping():
+    """A login that mints nothing must fail loudly.
+
+    Left unchecked it leaves the client unauthenticated, so _is_token_valid stays false
+    and every operation re-logs-in forever rather than surfacing the broken response.
+    """
+    from hegemony_secret_vault.vault_client import VaultAuthError
+
+    backend, mock_client = _approle_backend_with_mock_client(role_id="rid", secret_id="sid")
+    mock_client.token = None
+    mock_client.auth.approle.login.return_value = {"auth": {"lease_duration": 3600}}
+
+    try:
+        backend.read("a/b")
+    except VaultAuthError as exc:
+        assert "client_token" in str(exc)
+    else:
+        raise AssertionError("expected VaultAuthError when the login returns no token")
+
+
+def test_plaintext_address_is_warned_about(caplog):
+    # Not rejected: `server -dev` and existing internal deployments use plain HTTP, and
+    # failing them at runtime would break working installs. But it must not pass silently.
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        _backend_with_mock_client()
+    assert any("cleartext" in record.message for record in caplog.records)
+
+
+def test_https_address_is_not_warned_about(caplog):
+    import logging
+
+    config = VaultBackendConfig.from_dict({"address": "https://openbao:8200", "token": "tok"})
+    with caplog.at_level(logging.WARNING), patch("hvac.Client") as mock_client_cls:
+        mock_client_cls.return_value = MagicMock()
+        VaultSecretsBackend(config)
+    assert not any("cleartext" in record.message for record in caplog.records)

@@ -22,7 +22,7 @@ All three types build the same `VaultSecretsBackend`, which supports static
 token auth (dev mode) and AppRole auth (production), with thread-safe token
 caching and automatic re-authentication.
 
-### Why OpenBao is a separate type, not a separate client
+## Why OpenBao is a separate type, not a separate client
 
 OpenBao keeps Vault's HTTP API — the `X-Vault-Token` header, the KV v2 paths and
 the AppRole login are unchanged — so `hvac` talks to both and one client serves

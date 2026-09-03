@@ -31,6 +31,26 @@ TOKEN_EXPIRY_BUFFER_SECONDS = 60
 DEFAULT_TIMEOUT_SECONDS = 30
 
 
+def _normalize_timeout(value: Any) -> int:
+    """Coerce a configured timeout to a positive int, or raise a clear error.
+
+    Backend config arrives as JSON from the host's database and may have been through
+    templating, so a bare ``int()`` here can meet whitespace or an empty string and blow
+    up with an opaque ValueError at client construction. A zero or negative value is a
+    misconfiguration rather than "no timeout": the schema declares ``minimum: 1``, and
+    accepting it would reinstate exactly the unbounded request this field exists to stop.
+    """
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return DEFAULT_TIMEOUT_SECONDS
+    try:
+        timeout = int(str(value).strip())
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Vault backend config has a non-numeric timeout: {value!r}") from exc
+    if timeout < 1:
+        raise ValueError(f"Vault backend config timeout must be at least 1 second: {timeout}")
+    return timeout
+
+
 def _normalize_auth_value(value: Any) -> str | None:
     """Normalize line-oriented Vault auth material from env/file placeholders."""
     if value is None:
@@ -100,7 +120,7 @@ class VaultBackendConfig:
             ca_cert_file=config.get("ca_cert_file"),
             verify_ssl=config.get("verify_ssl", config.get("verify", True)),
             namespace=_normalize_auth_value(config.get("namespace")),
-            timeout=int(config.get("timeout") or DEFAULT_TIMEOUT_SECONDS),
+            timeout=_normalize_timeout(config.get("timeout")),
         )
 
 
@@ -157,6 +177,18 @@ class VaultSecretsBackend:
         verify: bool | str = config.verify_ssl
         if config.verify_ssl and config.ca_cert_file:
             verify = config.ca_cert_file
+
+        if not str(config.address).lower().startswith("https://"):
+            # Not fatal: `server -dev` and long-standing internal deployments both use
+            # plain HTTP, and refusing them here would break working installations at
+            # runtime rather than at configuration time. But it does mean the AppRole
+            # secret ID and every secret value cross the network in the clear, so it
+            # should never pass unnoticed.
+            logger.warning(
+                "Secret backend address %s is not HTTPS: credentials and secret values "
+                "will be sent in cleartext. Use https:// outside local development.",
+                config.address,
+            )
 
         self._client = hvac.Client(
             url=config.address,
@@ -310,6 +342,17 @@ class VaultSecretsBackend:
             if client_token:
                 self._client.token = client_token
 
+            # hvac's login() also stores the token on the adapter, so check the effective
+            # state rather than just the response body. If neither produced a token the
+            # login did not actually authenticate us: without this, _is_token_valid would
+            # stay false and every operation would re-login forever instead of surfacing
+            # a broken or changed API response.
+            if not self._client.token:
+                raise VaultAuthError(
+                    "Vault AppRole login returned no client token; the response was "
+                    f"missing auth.client_token: {sorted(auth_data)}"
+                )
+
             # Extract token TTL and set expiry
             lease_duration = auth_data.get("lease_duration", 3600)
             if lease_duration and lease_duration > 0:
@@ -325,6 +368,9 @@ class VaultSecretsBackend:
                 self._token_expiry = float("inf")
                 logger.info("Vault authentication successful, token does not expire")
 
+        except VaultAuthError:
+            # Already precise about what went wrong; re-wrapping would double the prefix.
+            raise
         except Exception as e:
             logger.error("Vault authentication failed: %s", e)
             raise VaultAuthError(f"Vault AppRole authentication failed: {e}") from e

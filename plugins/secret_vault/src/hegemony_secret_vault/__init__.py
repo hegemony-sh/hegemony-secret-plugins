@@ -23,7 +23,7 @@ from typing import Any
 
 from hegemony_secret_sdk import SecretBackendRegistry
 
-from .vault_client import VaultBackendConfig, VaultSecretsBackend
+from .vault_client import DEFAULT_TIMEOUT_SECONDS, VaultBackendConfig, VaultSecretsBackend
 
 # Fields holding raw auth material (token or credential *values*). The host UI renders
 # these with the secret/variable picker, and the host also *requires* them to be
@@ -78,7 +78,7 @@ def _config_schema(product: str, address_example: str) -> dict[str, Any]:
                     "Per-request timeout. Without one, an unresponsive server pins the "
                     "calling worker thread indefinitely."
                 ),
-                "default": 30,
+                "default": DEFAULT_TIMEOUT_SECONDS,
                 "minimum": 1,
             },
             "token": {
