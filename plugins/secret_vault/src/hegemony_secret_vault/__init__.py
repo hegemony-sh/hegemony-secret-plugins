@@ -206,6 +206,17 @@ def _config_schema(product: str, address_example: str) -> dict[str, Any]:
                 "title": "Verify SSL",
                 "default": True,
             },
+            "allow_insecure_http": {
+                "type": "boolean",
+                "title": "Allow plain HTTP",
+                "description": (
+                    "Accept an http:// address. Off by default: plain HTTP sends the "
+                    "AppRole secret ID and every secret value across the network in "
+                    "cleartext. Turn it on only for a dev server or a network you "
+                    "already trust to carry them."
+                ),
+                "default": False,
+            },
         },
     }
 

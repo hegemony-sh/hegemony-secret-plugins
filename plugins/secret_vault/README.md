@@ -73,7 +73,7 @@ unusable.
 
 | Field | Required | Default | Notes |
 |---|---|---|---|
-| `address` | yes | — | Vault server address, e.g. `http://vault:8200` |
+| `address` | yes | — | Vault server address, e.g. `https://vault:8200` |
 | `kv_mount` | no | `hegemony` | KV mount point |
 | `path_prefix` | no | — | Optional prefix applied to all secret paths |
 | `token` | no | — | Static Vault token (dev mode). Takes precedence over AppRole |
@@ -87,6 +87,7 @@ unusable.
 | `timeout` | no | `30` | Per-request timeout in seconds |
 | `ca_cert_file` | no | — | Optional path to a CA certificate bundle for TLS verification |
 | `verify_ssl` | no | `true` | Verify the TLS certificate |
+| `allow_insecure_http` | no | `false` | Accept an `http://` address — see [Transport security](#transport-security) |
 
 Exactly one auth method must resolve: a static `token`, or an AppRole pair
 (`role_id`/`role_id_file` plus `secret_id`/`secret_id_file`). Registering the
@@ -94,6 +95,27 @@ backend fails with a clear error if neither is configured. The `api_*`/`worker_*
 overrides are applied by the host before the backend factory runs, so from the
 plugin's perspective the resolved config always uses the plain
 `role_id`/`secret_id` and `role_id_file`/`secret_id_file` keys.
+
+### Transport security
+
+The address must be `https://` unless the config sets `allow_insecure_http: true`.
+
+This is enforced, not warned about. Over plain HTTP the AppRole secret ID and every
+secret value cross the network in cleartext, and a warning in a log file changes
+nothing — least of all for an address that was left on `http://` through an upgrade.
+The opt-in exists for a `server -dev` instance or a network you already trust to carry
+that traffic; it is logged loudly on every backend build.
+
+> **Upgrading from 0.1.x:** a backend configured with an `http://` address stops
+> building until you either move it to `https://` or set `allow_insecure_http: true`.
+> The error names the field.
+
+Redirects are never followed. The token travels in the `X-Vault-Token` header, and
+`requests` only strips `Authorization` when a redirect crosses hosts — a custom header
+would be replayed verbatim to whatever host a `3xx` names, handing it the token. A
+redirect therefore surfaces as an error naming the `Location`, rather than being
+followed or, on a write, silently swallowed. Vault and OpenBao redirect when a standby
+node has request forwarding disabled; point the backend at the active node.
 
 ### Rotating AppRole credentials
 

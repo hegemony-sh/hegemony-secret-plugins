@@ -51,6 +51,32 @@ def _normalize_timeout(value: Any) -> int:
     return timeout
 
 
+def _reject_redirect(response: Any, operation: str) -> Any:
+    """Fail loudly when the server answered a request with a redirect.
+
+    The client is built with ``allow_redirects=False``, so hvac hands the raw 3xx
+    response back instead of following it. Every caller expects a decoded JSON body, and
+    ``write``/``delete`` do not inspect the result at all -- so without this check a
+    redirected write would look like a success while nothing was stored.
+
+    A Vault or OpenBao node redirects when it is a standby and request forwarding is
+    disabled. The fix is to address the active node, not to follow the redirect.
+    """
+    status = getattr(response, "status_code", None)
+    if isinstance(status, int) and 300 <= status < 400:
+        headers = getattr(response, "headers", None)
+        location = ""
+        if isinstance(headers, Mapping):
+            location = str(headers.get("Location", ""))
+        target = f" to {location}" if location else ""
+        raise VaultError(
+            f"Vault {operation} was answered with an HTTP {status} redirect{target}, "
+            "which this client does not follow because the request carries a Vault "
+            "token. Point the backend address at the active node."
+        )
+    return response
+
+
 def _normalize_auth_value(value: Any) -> str | None:
     """Normalize line-oriented Vault auth material from env/file placeholders."""
     if value is None:
@@ -74,6 +100,7 @@ class VaultBackendConfig:
         secret_id_file: Path to file containing secret ID
         ca_cert_file: Optional path to CA certificate for TLS
         verify_ssl: Whether to verify SSL certificates (default: True)
+        allow_insecure_http: Opt in to a plain-HTTP address (default: False)
         namespace: Optional namespace to scope every request to (OpenBao / Vault Enterprise)
         timeout: Per-request timeout in seconds
     """
@@ -88,6 +115,7 @@ class VaultBackendConfig:
     secret_id_file: str | None = None
     ca_cert_file: str | None = None
     verify_ssl: bool = True
+    allow_insecure_http: bool = False
     namespace: str | None = None
     timeout: int = DEFAULT_TIMEOUT_SECONDS
 
@@ -119,6 +147,7 @@ class VaultBackendConfig:
             secret_id_file=config.get("secret_id_file"),
             ca_cert_file=config.get("ca_cert_file"),
             verify_ssl=config.get("verify_ssl", config.get("verify", True)),
+            allow_insecure_http=bool(config.get("allow_insecure_http", False)),
             namespace=_normalize_auth_value(config.get("namespace")),
             timeout=_normalize_timeout(config.get("timeout")),
         )
@@ -179,14 +208,20 @@ class VaultSecretsBackend:
             verify = config.ca_cert_file
 
         if not str(config.address).lower().startswith("https://"):
-            # Not fatal: `server -dev` and long-standing internal deployments both use
-            # plain HTTP, and refusing them here would break working installations at
-            # runtime rather than at configuration time. But it does mean the AppRole
-            # secret ID and every secret value cross the network in the clear, so it
-            # should never pass unnoticed.
+            # Plain HTTP puts the AppRole secret ID and every secret value on the wire in
+            # the clear, so it is refused unless the deployment says in its own config
+            # that it accepts that. A log warning was not enough: it changes nothing, and
+            # an address left on http:// after an upgrade would keep leaking silently.
+            if not config.allow_insecure_http:
+                raise ValueError(
+                    f"Secret backend address {config.address} is not HTTPS. Credentials "
+                    "and secret values would be sent in cleartext. Use an https:// "
+                    "address, or set allow_insecure_http to true to accept the risk "
+                    "(dev servers and trusted-network deployments only)."
+                )
             logger.warning(
-                "Secret backend address %s is not HTTPS: credentials and secret values "
-                "will be sent in cleartext. Use https:// outside local development.",
+                "Secret backend address %s is not HTTPS and allow_insecure_http is set: "
+                "credentials and secret values are sent in cleartext.",
                 config.address,
             )
 
@@ -195,6 +230,12 @@ class VaultSecretsBackend:
             verify=verify,
             timeout=config.timeout,
             namespace=config.namespace,
+            # The token travels in the X-Vault-Token header. requests drops only
+            # Authorization when a redirect crosses hosts, so a custom header like this
+            # one would be replayed verbatim to whatever host a 3xx names -- handing the
+            # token to it. Refuse to follow; _reject_redirect turns the unfollowed
+            # response into a clear error.
+            allow_redirects=False,
         )
 
         if self._use_token_auth:
@@ -327,9 +368,12 @@ class VaultSecretsBackend:
             logger.debug("Authenticating to Vault with AppRole")
 
             role_id, secret_id = self._resolve_approle_credentials()
-            response = self._client.auth.approle.login(
-                role_id=role_id,
-                secret_id=secret_id,
+            response = _reject_redirect(
+                self._client.auth.approle.login(
+                    role_id=role_id,
+                    secret_id=secret_id,
+                ),
+                "AppRole login",
             )
 
             auth_data = response.get("auth", {})
@@ -408,9 +452,12 @@ class VaultSecretsBackend:
         full_path = self._full_path(path)
 
         try:
-            response = self._client.secrets.kv.v2.read_secret_version(
-                path=full_path,
-                mount_point=self._config.kv_mount,
+            response = _reject_redirect(
+                self._client.secrets.kv.v2.read_secret_version(
+                    path=full_path,
+                    mount_point=self._config.kv_mount,
+                ),
+                "read",
             )
 
             if response is None:
@@ -422,6 +469,9 @@ class VaultSecretsBackend:
             # Explicit handling for missing values
             logger.debug("Value not found at path: %s", full_path)
             return None
+        except VaultError:
+            # Already precise; re-wrapping would nest two prefixes.
+            raise
         except Exception as e:
             # Handle any other errors
             logger.error("Vault read failed for path %s: %s", full_path, e)
@@ -442,13 +492,18 @@ class VaultSecretsBackend:
         full_path = self._full_path(path)
 
         try:
-            self._client.secrets.kv.v2.create_or_update_secret(
-                path=full_path,
-                secret=data,
-                mount_point=self._config.kv_mount,
+            _reject_redirect(
+                self._client.secrets.kv.v2.create_or_update_secret(
+                    path=full_path,
+                    secret=data,
+                    mount_point=self._config.kv_mount,
+                ),
+                "write",
             )
             logger.debug("Value written to path: %s", full_path)
 
+        except VaultError:
+            raise
         except Exception as e:
             logger.error("Vault write failed for path %s: %s", full_path, e)
             raise VaultError(f"Failed to write secret to Vault: {e}") from e
@@ -472,15 +527,20 @@ class VaultSecretsBackend:
         full_path = self._full_path(path)
 
         try:
-            self._client.secrets.kv.v2.delete_metadata_and_all_versions(
-                path=full_path,
-                mount_point=self._config.kv_mount,
+            _reject_redirect(
+                self._client.secrets.kv.v2.delete_metadata_and_all_versions(
+                    path=full_path,
+                    mount_point=self._config.kv_mount,
+                ),
+                "delete",
             )
             logger.debug("Value deleted at path: %s", full_path)
 
         except InvalidPath:
             logger.debug("Value already deleted or not found: %s", full_path)
             return
+        except VaultError:
+            raise
         except Exception as e:
             logger.error("Vault delete failed for path %s: %s", full_path, e)
             raise VaultError(f"Failed to delete secret from Vault: {e}") from e
@@ -505,15 +565,20 @@ class VaultSecretsBackend:
         full_path = self._full_path(path)
 
         try:
-            response = self._client.secrets.kv.v2.list_secrets(
-                path=full_path,
-                mount_point=self._config.kv_mount,
+            response = _reject_redirect(
+                self._client.secrets.kv.v2.list_secrets(
+                    path=full_path,
+                    mount_point=self._config.kv_mount,
+                ),
+                "list",
             )
             if response is None:
                 return []
             return [str(key) for key in response.get("data", {}).get("keys", [])]
         except InvalidPath:
             return []
+        except VaultError:
+            raise
         except Exception as e:
             logger.error("Vault list failed for path %s: %s", full_path, e)
             raise VaultError(f"Failed to list secrets in Vault: {e}") from e
@@ -542,22 +607,32 @@ class VaultSecretsBackend:
             raise VaultAuthError(f"Vault authentication check failed: {e}") from e
 
         try:
-            self._client.secrets.kv.v2.read_configuration(mount_point=self._config.kv_mount)
+            _reject_redirect(
+                self._client.secrets.kv.v2.read_configuration(mount_point=self._config.kv_mount),
+                "connectivity check",
+            )
             return
         except Forbidden:
             logger.debug("Vault mount config read forbidden; falling back to metadata LIST")
+        except VaultError:
+            raise
         except Exception as e:
             logger.error("Vault connectivity check failed: %s", e)
             raise VaultError(f"Vault connectivity check failed: {e}") from e
 
         try:
-            self._client.secrets.kv.v2.list_secrets(
-                path=self._config.path_prefix or "",
-                mount_point=self._config.kv_mount,
+            _reject_redirect(
+                self._client.secrets.kv.v2.list_secrets(
+                    path=self._config.path_prefix or "",
+                    mount_point=self._config.kv_mount,
+                ),
+                "connectivity check",
             )
         except InvalidPath:
             # Empty mount/prefix: the request reached the mount with valid auth.
             return
+        except VaultError:
+            raise
         except Exception as e:
             logger.error("Vault connectivity check failed: %s", e)
             raise VaultError(f"Vault connectivity check failed: {e}") from e

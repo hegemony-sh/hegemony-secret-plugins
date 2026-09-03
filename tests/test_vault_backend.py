@@ -171,13 +171,13 @@ def test_openbao_schema_shares_property_names_with_vault():
 @patch("hvac.Client")
 def test_build_vault_backend_returns_backend_instance(mock_client_cls):
     mock_client_cls.return_value = MagicMock(token="static-token")
-    backend = plugin.build_vault_backend({"address": "http://vault:8200", "token": "s3cret"})
+    backend = plugin.build_vault_backend({"address": "https://vault:8200", "token": "s3cret"})
     assert isinstance(backend, VaultSecretsBackend)
 
 
 def _backend_with_mock_client(**config_overrides) -> tuple[VaultSecretsBackend, MagicMock]:
     config = VaultBackendConfig.from_dict(
-        {"address": "http://vault:8200", "token": "tok", **config_overrides}
+        {"address": "https://vault:8200", "token": "tok", **config_overrides}
     )
     with patch("hvac.Client") as mock_client_cls:
         mock_client = MagicMock()
@@ -290,7 +290,7 @@ def test_vault_backend_config_all_fields():
 
 
 def test_vault_backend_missing_auth_raises():
-    config = VaultBackendConfig(address="http://vault:8200")
+    config = VaultBackendConfig(address="https://vault:8200")
     assert config.role_id is None
     assert config.secret_id is None
     with patch("hvac.Client") as mock_client_cls:
@@ -306,7 +306,7 @@ def test_vault_backend_missing_auth_raises():
 
 
 def _approle_backend_with_mock_client(**config_overrides) -> tuple[VaultSecretsBackend, MagicMock]:
-    config = VaultBackendConfig.from_dict({"address": "http://vault:8200", **config_overrides})
+    config = VaultBackendConfig.from_dict({"address": "https://vault:8200", **config_overrides})
     with patch("hvac.Client") as mock_client_cls:
         mock_client = MagicMock()
         mock_client_cls.return_value = mock_client
@@ -533,13 +533,35 @@ def test_approle_login_without_a_token_raises_instead_of_looping():
         raise AssertionError("expected VaultAuthError when the login returns no token")
 
 
-def test_plaintext_address_is_warned_about(caplog):
-    # Not rejected: `server -dev` and existing internal deployments use plain HTTP, and
-    # failing them at runtime would break working installs. But it must not pass silently.
+def test_plaintext_address_is_rejected_without_an_explicit_opt_in():
+    """A warning changed nothing; an http:// address now has to be asked for.
+
+    Plain HTTP puts the AppRole secret ID and every secret value on the wire in the
+    clear, and an address left on http:// after an upgrade would keep leaking silently.
+    """
+    config = VaultBackendConfig.from_dict({"address": "http://vault:8200", "token": "tok"})
+    with patch("hvac.Client") as mock_client_cls:
+        mock_client_cls.return_value = MagicMock()
+        try:
+            VaultSecretsBackend(config)
+        except ValueError as exc:
+            assert "allow_insecure_http" in str(exc)
+            assert "http://vault:8200" in str(exc)
+        else:
+            raise AssertionError("expected a plain-HTTP address to be rejected")
+    # The client is never built, so nothing can reach the network over cleartext.
+    mock_client_cls.assert_not_called()
+
+
+def test_plaintext_address_is_allowed_with_the_opt_in_but_still_warned_about(caplog):
     import logging
 
-    with caplog.at_level(logging.WARNING):
-        _backend_with_mock_client()
+    config = VaultBackendConfig.from_dict(
+        {"address": "http://vault:8200", "token": "tok", "allow_insecure_http": True}
+    )
+    with caplog.at_level(logging.WARNING), patch("hvac.Client") as mock_client_cls:
+        mock_client_cls.return_value = MagicMock()
+        VaultSecretsBackend(config)
     assert any("cleartext" in record.message for record in caplog.records)
 
 
@@ -551,3 +573,102 @@ def test_https_address_is_not_warned_about(caplog):
         mock_client_cls.return_value = MagicMock()
         VaultSecretsBackend(config)
     assert not any("cleartext" in record.message for record in caplog.records)
+
+
+def test_config_schema_exposes_the_plain_http_opt_in_defaulting_to_off():
+    reg = FakeRegistry()
+    plugin.register(reg)
+    for backend_type in ("vault", "vault_kv2", "openbao"):
+        field = reg.types[backend_type]["config_schema"]["properties"]["allow_insecure_http"]
+        assert field["type"] == "boolean"
+        assert field["default"] is False
+
+
+def test_the_opt_in_is_not_needed_for_https():
+    # The flag only widens what is accepted; it never has to be set on a secure address.
+    config = VaultBackendConfig.from_dict({"address": "https://openbao:8200", "token": "tok"})
+    assert config.allow_insecure_http is False
+
+
+def test_client_does_not_follow_redirects():
+    """The Vault token rides in X-Vault-Token, a custom header.
+
+    requests only strips Authorization when a redirect crosses hosts, so a followed 3xx
+    would hand the token to whatever host the Location names.
+    """
+    assert _client_kwargs_for(token="tok")["allow_redirects"] is False
+
+
+def _redirect_response(location: str = "https://attacker.example/v1/") -> MagicMock:
+    """A stand-in for what hvac returns for an unfollowed 3xx: the raw response."""
+    response = MagicMock()
+    response.status_code = 307
+    response.headers = {"Location": location}
+    return response
+
+
+def test_a_redirected_read_raises_instead_of_returning_the_raw_response():
+    from hegemony_secret_vault.vault_client import VaultError
+
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.read_secret_version.return_value = _redirect_response()
+
+    try:
+        backend.read("a/b")
+    except VaultError as exc:
+        assert "307" in str(exc)
+        assert "https://attacker.example/v1/" in str(exc)
+    else:
+        raise AssertionError("expected a redirect to surface as a VaultError")
+
+
+def test_a_redirected_write_is_not_reported_as_a_success():
+    """write() ignores its return value, so a redirect would look like a stored secret."""
+    from hegemony_secret_vault.vault_client import VaultError
+
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.create_or_update_secret.return_value = _redirect_response()
+
+    try:
+        backend.write("a/b", {"password": "hunter2"})
+    except VaultError as exc:
+        assert "307" in str(exc)
+    else:
+        raise AssertionError("expected a redirected write to fail loudly")
+
+
+def test_a_redirected_delete_is_not_reported_as_a_success():
+    from hegemony_secret_vault.vault_client import VaultError
+
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.delete_metadata_and_all_versions.return_value = _redirect_response()
+
+    try:
+        backend.delete("a/b")
+    except VaultError as exc:
+        assert "307" in str(exc)
+    else:
+        raise AssertionError("expected a redirected delete to fail loudly")
+
+
+def test_a_redirected_login_raises_instead_of_being_read_as_a_token():
+    from hegemony_secret_vault.vault_client import VaultError
+
+    backend, mock_client = _backend_with_mock_client(token=None, role_id="r", secret_id="s")
+    mock_client.token = None
+    mock_client.auth.approle.login.return_value = _redirect_response()
+
+    try:
+        backend.read("a/b")
+    except VaultError as exc:
+        assert "307" in str(exc)
+    else:
+        raise AssertionError("expected a redirected login to fail loudly")
+
+
+def test_a_non_redirect_response_passes_through_untouched():
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.read_secret_version.return_value = {
+        "data": {"data": {"password": "hunter2"}}
+    }
+    assert backend.read("a/b") == {"password": "hunter2"}
