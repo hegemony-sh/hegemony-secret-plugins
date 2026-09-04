@@ -207,7 +207,7 @@ wheels = [
 
 [[package]]
 name = "hegemony-secret-1password"
-version = "0.1.1"
+version = "0.2.0"
 source = { editable = "plugins/secret_1password" }
 dependencies = [
     { name = "hegemony-secret-sdk" },
@@ -255,7 +255,7 @@ dev = [
 
 [[package]]
 name = "hegemony-secret-sdk"
-version = "0.1.1"
+version = "0.2.0"
 source = { editable = "packages/secret_sdk" }
 dependencies = [
     { name = "pydantic" },
@@ -266,7 +266,7 @@ requires-dist = [{ name = "pydantic", specifier = ">=2.7" }]
 
 [[package]]
 name = "hegemony-secret-vault"
-version = "0.1.1"
+version = "0.2.0"
 source = { editable = "plugins/secret_vault" }
 dependencies = [
     { name = "hegemony-secret-sdk" },
