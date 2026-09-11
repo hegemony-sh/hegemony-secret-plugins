@@ -18,6 +18,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
+from .fields import build_field_mapping
+
 logger = logging.getLogger(__name__)
 
 # The Connect SDK's title-based lookups embed the HTTP status only in the exception
@@ -52,6 +54,55 @@ def _is_not_found(exc: Exception) -> bool:
     match = _FOUND_COUNT_PATTERN.search(str(exc))
     # A multi-match ("Found 2 items") is an ambiguous title — a real error, not a miss.
     return not (match and int(match.group(1)) > 1)
+
+
+def _section_labels(item: Any) -> dict[str, str]:
+    """Map an item's section ids to their labels (``Item.sections``)."""
+    labels: dict[str, str] = {}
+    for section in getattr(item, "sections", None) or []:
+        section_id = getattr(section, "id", None)
+        label = getattr(section, "label", None)
+        if section_id and label:
+            labels[str(section_id)] = str(label)
+    return labels
+
+
+def _field_value(field: Any) -> str | None:
+    """The value a Connect field contributes, or ``None`` to leave it out.
+
+    A one-time-password field carries its ``otpauth://`` seed in ``value`` and the
+    current code in ``totp``; only the code is ever returned. A field without a value
+    contributes nothing.
+    """
+    if str(getattr(field, "type", "") or "").upper() == "OTP":
+        code = getattr(field, "totp", None)
+        if not code:
+            logger.warning(
+                "1Password field %r is a one-time-password field but the Connect server "
+                "returned no code; skipping it",
+                getattr(field, "label", None),
+            )
+            return None
+        return str(code)
+    value = getattr(field, "value", None)
+    return None if value is None else str(value)
+
+
+def _field_entries(item: Any) -> list[tuple[str, str | None, str]]:
+    """Extract ``(label, section label, value)`` triples from a Connect item."""
+    sections = _section_labels(item)
+    entries: list[tuple[str, str | None, str]] = []
+    for field in getattr(item, "fields", None) or []:
+        label = getattr(field, "label", None)
+        if not label:
+            continue
+        value = _field_value(field)
+        if value is None:
+            continue
+        section_id = getattr(getattr(field, "section", None), "id", None)
+        section = sections.get(str(section_id)) if section_id else None
+        entries.append((str(label), section, value))
+    return entries
 
 
 def _split_path(path: str) -> tuple[str, str]:
@@ -146,8 +197,10 @@ class OnePasswordConnectBackend:
                 item title/id, split on the first ``/``).
 
         Returns:
-            Mapping of field label to field value, or ``None`` if the item is not
-            found.
+            Mapping of field label (and ``<section>.<label>`` for sectioned fields) to
+            field value, or ``None`` if the item is not found. One-time-password fields
+            map to their current code, never the seed. See ``fields.build_field_mapping``
+            for the duplicate-label rule.
 
         Raises:
             ValueError: If ``path`` is not exactly two non-empty parts.
@@ -165,9 +218,7 @@ class OnePasswordConnectBackend:
                 return None
             raise
 
-        return {
-            field.label: field.value for field in result.fields or [] if field.value is not None
-        }
+        return build_field_mapping(str(getattr(result, "title", item)), _field_entries(result))
 
     def write(self, path: str, data: Mapping[str, Any]) -> None:
         """Create or update the 1Password item at ``path`` with ``data`` as its fields.

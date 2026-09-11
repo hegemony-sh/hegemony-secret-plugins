@@ -77,11 +77,31 @@ def test_service_account_config_schema_marks_token_as_secret_ref():
 # --- Connect backend -------------------------------------------------------------
 
 
-def _fake_field(label: str, value: Any) -> MagicMock:
+def _fake_field(
+    label: str,
+    value: Any,
+    *,
+    type: str = "STRING",
+    totp: str | None = None,
+    section_id: str | None = None,
+) -> MagicMock:
+    # Every attribute read() consults is set explicitly: a bare MagicMock attribute is
+    # truthy, so an unset `totp` or `section` would satisfy any getattr.
     field = MagicMock()
     field.label = label
     field.value = value
+    field.type = type
+    field.totp = totp
+    field.section = MagicMock(id=section_id) if section_id else None
     return field
+
+
+def _fake_connect_item(fields: list[MagicMock], sections: tuple = ()) -> MagicMock:
+    item = MagicMock()
+    item.title = "Database"
+    item.fields = fields
+    item.sections = [MagicMock(id=section_id, label=label) for section_id, label in sections]
+    return item
 
 
 def _connect_backend_with_mock_client() -> tuple[OnePasswordConnectBackend, MagicMock]:
@@ -136,6 +156,107 @@ def test_connect_read_handles_fieldless_item():
     result = backend.read("Engineering/Database")
 
     assert result == {}
+
+
+def test_connect_read_returns_the_current_code_for_otp_fields():
+    backend, mock_client = _connect_backend_with_mock_client()
+    mock_client.get_item.return_value = _fake_connect_item(
+        [
+            _fake_field("username", "alice"),
+            _fake_field(
+                "one-time password",
+                "otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP",
+                type="OTP",
+                totp="492039",
+            ),
+        ]
+    )
+
+    result = backend.read("Engineering/Database")
+
+    assert result == {"username": "alice", "one-time password": "492039"}
+    assert result is not None
+    assert not any("otpauth://" in value for value in result.values())
+
+
+def test_connect_read_detects_otp_fields_case_insensitively():
+    backend, mock_client = _connect_backend_with_mock_client()
+    mock_client.get_item.return_value = _fake_connect_item(
+        [_fake_field("totp", "otpauth://totp/x?secret=ABC", type="otp", totp="111222")]
+    )
+    assert backend.read("Engineering/Database") == {"totp": "111222"}
+
+
+def test_connect_read_skips_an_otp_field_without_a_code(caplog):
+    import logging
+
+    backend, mock_client = _connect_backend_with_mock_client()
+    mock_client.get_item.return_value = _fake_connect_item(
+        [
+            _fake_field("username", "alice"),
+            _fake_field("one-time password", "otpauth://totp/x?secret=ABC", type="OTP"),
+        ]
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = backend.read("Engineering/Database")
+
+    # The seed must never stand in for the code.
+    assert result == {"username": "alice"}
+    assert any("one-time password" in record.message for record in caplog.records)
+
+
+def test_connect_read_adds_section_qualified_keys():
+    backend, mock_client = _connect_backend_with_mock_client()
+    mock_client.get_item.return_value = _fake_connect_item(
+        [
+            _fake_field("username", "alice"),
+            _fake_field("password", "adm1n", section_id="s1"),
+        ],
+        sections=(("s1", "Admin"),),
+    )
+
+    result = backend.read("Engineering/Database")
+
+    assert result == {"username": "alice", "password": "adm1n", "Admin.password": "adm1n"}
+
+
+def test_connect_read_keeps_the_last_duplicate_and_warns_with_qualified_keys(caplog):
+    import logging
+
+    backend, mock_client = _connect_backend_with_mock_client()
+    mock_client.get_item.return_value = _fake_connect_item(
+        [
+            _fake_field("password", "first", section_id="s1"),
+            _fake_field("password", "second", section_id="s2"),
+        ],
+        sections=(("s1", "Primary"), ("s2", "Secondary")),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = backend.read("Engineering/Database")
+
+    assert result == {
+        "password": "second",
+        "Primary.password": "first",
+        "Secondary.password": "second",
+    }
+    messages = [record.message for record in caplog.records]
+    assert any("Primary.password" in m and "Secondary.password" in m for m in messages)
+    # Values never appear in the warning.
+    assert not any("first" in m or "second" in m for m in messages)
+
+
+def test_connect_read_identical_duplicates_do_not_warn(caplog):
+    import logging
+
+    backend, mock_client = _connect_backend_with_mock_client()
+    mock_client.get_item.return_value = _fake_connect_item(
+        [_fake_field("password", "same"), _fake_field("password", "same")]
+    )
+    with caplog.at_level(logging.WARNING):
+        assert backend.read("Engineering/Database") == {"password": "same"}
+    assert not caplog.records
 
 
 def test_connect_read_raises_value_error_for_malformed_path():
@@ -258,11 +379,32 @@ def _fake_item_overview(item_id: str, title: str) -> MagicMock:
     return overview
 
 
-def _fake_item_field(title: str, value: Any) -> MagicMock:
+def _fake_item_field(
+    title: str,
+    value: Any,
+    *,
+    field_type: Any = None,
+    details: Any = None,
+    section_id: str | None = None,
+) -> MagicMock:
+    from onepassword import ItemFieldType
+
+    # Every attribute read() consults is set explicitly (see _fake_field).
     field = MagicMock()
     field.title = title
     field.value = value
+    field.field_type = ItemFieldType.CONCEALED if field_type is None else field_type
+    field.details = details
+    field.section_id = section_id
     return field
+
+
+def _fake_sa_item(fields: list[MagicMock], sections: tuple = ()) -> MagicMock:
+    item = MagicMock()
+    item.title = "Database"
+    item.fields = fields
+    item.sections = [MagicMock(id=section_id, title=title) for section_id, title in sections]
+    return item
 
 
 def _service_account_backend_with_mock_client() -> tuple[
@@ -311,6 +453,149 @@ def test_service_account_read_resolves_vault_and_item_to_fields():
     mock_client.vaults.list.assert_called_once()
     mock_client.items.list.assert_called_once_with("vault-1")
     mock_client.items.get.assert_called_once_with("vault-1", "item-1")
+
+
+def test_service_account_read_returns_the_current_code_for_totp_fields():
+    from onepassword import ItemFieldType
+    from onepassword.types import ItemFieldDetailsOtp, OtpFieldDetails
+
+    backend, mock_client = _service_account_backend_with_mock_client()
+    mock_client.items.get = AsyncMock(
+        return_value=_fake_sa_item(
+            [
+                _fake_item_field("username", "alice"),
+                _fake_item_field(
+                    "one-time password",
+                    "otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP",
+                    field_type=ItemFieldType.TOTP,
+                    details=ItemFieldDetailsOtp(content=OtpFieldDetails(code="492039")),
+                ),
+            ]
+        )
+    )
+
+    result = backend.read("Engineering/Database")
+
+    assert result == {"username": "alice", "one-time password": "492039"}
+    assert result is not None
+    assert not any("otpauth://" in value for value in result.values())
+
+
+def test_service_account_read_skips_a_totp_field_without_a_code(caplog):
+    import logging
+
+    from onepassword import ItemFieldType
+    from onepassword.types import ItemFieldDetailsOtp, OtpFieldDetails
+
+    backend, mock_client = _service_account_backend_with_mock_client()
+    mock_client.items.get = AsyncMock(
+        return_value=_fake_sa_item(
+            [
+                _fake_item_field(
+                    "one-time password",
+                    "otpauth://totp/x?secret=ABC",
+                    field_type=ItemFieldType.TOTP,
+                    details=ItemFieldDetailsOtp(
+                        content=OtpFieldDetails(errorMessage="invalid secret")
+                    ),
+                )
+            ]
+        )
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = backend.read("Engineering/Database")
+
+    assert result == {}
+    assert any("invalid secret" in record.message for record in caplog.records)
+
+
+def test_service_account_read_exposes_ssh_key_attributes():
+    from onepassword import ItemFieldType
+    from onepassword.types import ItemFieldDetailsSshKey, SshKeyAttributes
+
+    backend, mock_client = _service_account_backend_with_mock_client()
+    private_key = (
+        "-----BEGIN OPENSSH PRIVATE KEY-----\nb3Blbn...\n-----END OPENSSH PRIVATE KEY-----"
+    )
+    mock_client.items.get = AsyncMock(
+        return_value=_fake_sa_item(
+            [
+                _fake_item_field(
+                    "private key",
+                    private_key,
+                    field_type=ItemFieldType.SSHKEY,
+                    details=ItemFieldDetailsSshKey(
+                        content=SshKeyAttributes(
+                            publicKey="ssh-ed25519 AAAAC3Nza... bastion",
+                            fingerprint="SHA256:abc123",
+                            keyType="Ed25519",
+                        )
+                    ),
+                )
+            ]
+        )
+    )
+
+    result = backend.read("Engineering/Database")
+
+    assert result == {
+        "private key": private_key,
+        "private key.public_key": "ssh-ed25519 AAAAC3Nza... bastion",
+        "private key.fingerprint": "SHA256:abc123",
+        "private key.key_type": "Ed25519",
+    }
+
+
+def test_service_account_read_ssh_key_without_details_keeps_only_the_private_key():
+    from onepassword import ItemFieldType
+    from onepassword.types import ItemFieldDetailsSshKey
+
+    backend, mock_client = _service_account_backend_with_mock_client()
+    mock_client.items.get = AsyncMock(
+        return_value=_fake_sa_item(
+            [
+                _fake_item_field(
+                    "private key",
+                    "-----BEGIN OPENSSH PRIVATE KEY-----",
+                    field_type=ItemFieldType.SSHKEY,
+                    details=ItemFieldDetailsSshKey(content=None),
+                )
+            ]
+        )
+    )
+    assert backend.read("Engineering/Database") == {
+        "private key": "-----BEGIN OPENSSH PRIVATE KEY-----"
+    }
+
+
+def test_service_account_read_adds_section_qualified_keys_and_warns_on_duplicates(caplog):
+    import logging
+
+    backend, mock_client = _service_account_backend_with_mock_client()
+    mock_client.items.get = AsyncMock(
+        return_value=_fake_sa_item(
+            [
+                _fake_item_field("username", "alice"),
+                _fake_item_field("password", "first", section_id="s1"),
+                _fake_item_field("password", "second", section_id="s2"),
+            ],
+            sections=(("s1", "Primary"), ("s2", "Secondary")),
+        )
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = backend.read("Engineering/Database")
+
+    assert result == {
+        "username": "alice",
+        "password": "second",
+        "Primary.password": "first",
+        "Secondary.password": "second",
+    }
+    messages = [record.message for record in caplog.records]
+    assert any("Primary.password" in m and "Secondary.password" in m for m in messages)
+    assert not any("first" in m or "second" in m for m in messages)
 
 
 def test_service_account_read_raises_value_error_for_malformed_path():

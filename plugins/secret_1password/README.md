@@ -18,7 +18,9 @@ backend types:
 
 Both types resolve a `{{ secret('scheme://vault/item/field') }}` reference's
 `path` as `"<vault>/<item>"` (vault title/id and item title/id, split on the
-first `/`) and return a mapping of item field name to field value. Per the
+first `/`) and return a mapping of item field name to field value (see
+[Field mapping](#field-mapping) for section-qualified names, one-time-password
+codes and SSH keys). Per the
 `SecretBackend` contract, `read` returns `None` — rather than raising — when
 the vault or item cannot be found; a malformed `path` (not exactly two
 non-empty parts) still raises `ValueError`, since that is an input error
@@ -59,6 +61,31 @@ Service Account SDK, used by `onepassword_service_account`); it never imports
 Hegemony platform internals. Both third-party SDKs are pulled in as direct
 dependencies of this wheel — no separate install step is needed for either
 backend type.
+
+## Field mapping
+
+`read` turns an item's fields into the keys a reference may name:
+
+- **Bare field name.** Every field is available under its own label (Connect)
+  or title (Service Account). When an item has several fields with the same
+  name and different values, the bare key resolves to the last one and the
+  plugin logs a warning naming the section-qualified keys.
+- **Section-qualified name.** A field inside a section is also available as
+  `<section>.<field>`, the unambiguous way to address a duplicate, for example
+  `{{ secret('onepassword://Engineering/Database/Admin.password') }}`.
+- **One-time-password fields** resolve to the **current code**, never the
+  `otpauth://` seed. A code the server could not compute is skipped with a
+  warning.
+- **SSH key fields** (Service Account only; Connect exposes no SSH typing, so
+  an SSH Key item's fields arrive under their plain labels) resolve to the
+  private key as 1Password stores it, plus `<field>.public_key`,
+  `<field>.fingerprint` and `<field>.key_type` when the SDK computes them, for
+  example `{{ secret('onepassword://Engineering/Bastion/private key.public_key') }}`.
+- Fields without a value are omitted.
+
+> **Upgrading from 0.2.x:** a reference to a one-time-password field used to
+> return the seed URI; it now returns the current code. Everything else keeps
+> its bare-name behaviour; the section-qualified names are additive.
 
 ## Install
 

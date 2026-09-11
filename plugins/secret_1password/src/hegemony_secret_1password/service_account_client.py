@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version as _package_version
 from typing import Any, TypeVar
 
+from .fields import build_field_mapping
+
 logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
@@ -49,6 +51,75 @@ def _integration_version() -> str:
         return _package_version("hegemony-secret-1password")
     except PackageNotFoundError:
         return "0.0.0"
+
+
+# The SSH-key attributes the SDK computes for an SshKey field, exposed as
+# "<field title>.<attribute>" beside the private key.
+_SSH_KEY_ATTRIBUTES = ("public_key", "fingerprint", "key_type")
+
+
+def _section_titles(item: Any) -> dict[str, str]:
+    """Map an item's section ids to their titles (``Item.sections``)."""
+    titles: dict[str, str] = {}
+    for section in getattr(item, "sections", None) or []:
+        section_id = getattr(section, "id", None)
+        title = getattr(section, "title", None)
+        if section_id and title:
+            titles[str(section_id)] = str(title)
+    return titles
+
+
+def _field_values(field: Any) -> list[tuple[str, str]]:
+    """The ``(key, value)`` pairs a Service Account field contributes.
+
+    A TOTP field carries its seed in ``value`` and the computed code in
+    ``details.content.code``; only the code is ever returned. An SshKey field
+    contributes the private key (as 1Password stores it) under its title plus the
+    computed ``public_key``/``fingerprint``/``key_type`` attributes when the SDK
+    supplies them. A field without a value contributes nothing.
+    """
+    from onepassword import ItemFieldType
+
+    title = str(getattr(field, "title", "") or "")
+    if not title:
+        return []
+    field_type = getattr(field, "field_type", None)
+    content = getattr(getattr(field, "details", None), "content", None)
+
+    if field_type == ItemFieldType.TOTP:
+        code = getattr(content, "code", None) if content is not None else None
+        if not code:
+            reason = getattr(content, "error_message", None) if content is not None else None
+            logger.warning(
+                "1Password field %r is a one-time-password field but no code was "
+                "computed%s; skipping it",
+                title,
+                f" ({reason})" if reason else "",
+            )
+            return []
+        return [(title, str(code))]
+
+    value = getattr(field, "value", None)
+    if value is None:
+        return []
+    pairs = [(title, str(value))]
+    if field_type == ItemFieldType.SSHKEY and content is not None:
+        for attribute in _SSH_KEY_ATTRIBUTES:
+            attribute_value = getattr(content, attribute, None)
+            if attribute_value:
+                pairs.append((f"{title}.{attribute}", str(attribute_value)))
+    return pairs
+
+
+def _field_entries(item: Any) -> list[tuple[str, str | None, str]]:
+    """Extract ``(title, section title, value)`` triples from a Service Account item."""
+    sections = _section_titles(item)
+    entries: list[tuple[str, str | None, str]] = []
+    for field in getattr(item, "fields", None) or []:
+        section_id = getattr(field, "section_id", None)
+        section = sections.get(str(section_id)) if section_id else None
+        entries.extend((key, section, value) for key, value in _field_values(field))
+    return entries
 
 
 def _split_path(path: str) -> tuple[str, str]:
@@ -256,7 +327,9 @@ class OnePasswordServiceAccountBackend:
         if item_id is None:
             return None
         found_item = await client.items.get(vault_id, item_id)
-        return {field.title: field.value for field in found_item.fields if field.value is not None}
+        return build_field_mapping(
+            str(getattr(found_item, "title", item)), _field_entries(found_item)
+        )
 
     def read(self, path: str) -> dict[str, Any] | None:
         """Read a 1Password item's fields via a Service Account.
@@ -266,8 +339,11 @@ class OnePasswordServiceAccountBackend:
                 item title/id, split on the first ``/``).
 
         Returns:
-            Mapping of field title to field value, or ``None`` if the vault or
-            item is not found.
+            Mapping of field title (and ``<section>.<title>`` for sectioned fields) to
+            field value, or ``None`` if the vault or item is not found. TOTP fields map
+            to their current code, never the seed; SshKey fields add
+            ``<title>.public_key``, ``<title>.fingerprint`` and ``<title>.key_type``.
+            See ``fields.build_field_mapping`` for the duplicate-title rule.
 
         Raises:
             ValueError: If ``path`` is not exactly two non-empty parts.
