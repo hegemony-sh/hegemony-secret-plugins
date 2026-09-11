@@ -7,6 +7,12 @@
 This module provides a client for HashiCorp Vault KV v2 secrets engine.
 It handles AppRole authentication, token caching, and automatic re-authentication.
 
+The connection and authentication core lives in :class:`_VaultAuthenticatedClient` so
+other Vault-backed backend types (the SSH one-time-password backend in
+``ssh_otp_client``) share it without inheriting the KV v2 methods. The host
+feature-detects optional capabilities such as ``list`` on the backend instance, so a
+non-KV backend must not carry them.
+
 The client is designed to be used by both API and Worker components.
 """
 
@@ -86,16 +92,14 @@ def _normalize_auth_value(value: Any) -> str | None:
 
 
 @dataclass
-class VaultBackendConfig:
-    """Configuration for a Vault backend.
+class VaultConnectionConfig:
+    """Connection and authentication settings shared by every Vault-backed backend type.
 
     Attributes:
-        address: Vault server address (e.g., "http://vault:8200")
-        kv_mount: KV v2 mount point (default: "hegemony")
-        path_prefix: Optional prefix for all paths (default: "")
+        address: Vault server address (e.g., "https://vault:8200")
         token: Static Vault token (for dev mode - takes precedence over AppRole)
-        role_id: AppRole role ID (or path to file with _file suffix)
-        secret_id: AppRole secret ID (or path to file with _file suffix)
+        role_id: AppRole role ID
+        secret_id: AppRole secret ID
         role_id_file: Path to file containing role ID
         secret_id_file: Path to file containing secret ID
         ca_cert_file: Optional path to CA certificate for TLS
@@ -106,8 +110,6 @@ class VaultBackendConfig:
     """
 
     address: str
-    kv_mount: str = "hegemony"
-    path_prefix: str = ""
     token: str | None = None
     role_id: str | None = None
     secret_id: str | None = None
@@ -118,6 +120,50 @@ class VaultBackendConfig:
     allow_insecure_http: bool = False
     namespace: str | None = None
     timeout: int = DEFAULT_TIMEOUT_SECONDS
+
+    @classmethod
+    def _connection_kwargs(cls, config: dict) -> dict[str, Any]:
+        """Normalise the shared connection fields of a resolved config dict.
+
+        Every Vault-backed type builds itself as ``cls(**cls._connection_kwargs(config),
+        ...)`` so auth material, the legacy ``verify`` key and the timeout are parsed
+        identically whichever engine the type talks to.
+
+        Args:
+            config: Dictionary with config values. Supports both 'verify_ssl' and
+                    legacy 'verify' key for SSL verification setting.
+        """
+        address = config.get("address")
+        if not address:
+            raise ValueError("Vault backend config is missing required field: address")
+        return {
+            "address": address,
+            "token": _normalize_auth_value(config.get("token")),
+            "role_id": _normalize_auth_value(config.get("role_id")),
+            "secret_id": _normalize_auth_value(config.get("secret_id")),
+            "role_id_file": config.get("role_id_file"),
+            "secret_id_file": config.get("secret_id_file"),
+            "ca_cert_file": config.get("ca_cert_file"),
+            "verify_ssl": config.get("verify_ssl", config.get("verify", True)),
+            "allow_insecure_http": bool(config.get("allow_insecure_http", False)),
+            "namespace": _normalize_auth_value(config.get("namespace")),
+            "timeout": _normalize_timeout(config.get("timeout")),
+        }
+
+
+@dataclass
+class VaultBackendConfig(VaultConnectionConfig):
+    """Configuration for a Vault KV v2 backend.
+
+    Adds the KV v2 addressing to :class:`VaultConnectionConfig`:
+
+    Attributes:
+        kv_mount: KV v2 mount point (default: "hegemony")
+        path_prefix: Optional prefix for all paths (default: "")
+    """
+
+    kv_mount: str = "hegemony"
+    path_prefix: str = ""
 
     @classmethod
     def from_dict(cls, config: dict) -> VaultBackendConfig:
@@ -133,60 +179,43 @@ class VaultBackendConfig:
         Returns:
             VaultBackendConfig instance
         """
-        address = config.get("address")
-        if not address:
-            raise ValueError("Vault backend config is missing required field: address")
         return cls(
-            address=address,
+            **cls._connection_kwargs(config),
             kv_mount=config.get("kv_mount", "hegemony"),
             path_prefix=config.get("path_prefix", ""),
-            token=_normalize_auth_value(config.get("token")),
-            role_id=_normalize_auth_value(config.get("role_id")),
-            secret_id=_normalize_auth_value(config.get("secret_id")),
-            role_id_file=config.get("role_id_file"),
-            secret_id_file=config.get("secret_id_file"),
-            ca_cert_file=config.get("ca_cert_file"),
-            verify_ssl=config.get("verify_ssl", config.get("verify", True)),
-            allow_insecure_http=bool(config.get("allow_insecure_http", False)),
-            namespace=_normalize_auth_value(config.get("namespace")),
-            timeout=_normalize_timeout(config.get("timeout")),
         )
 
 
-class VaultSecretsBackend:
-    """Vault KV v2 secrets backend using AppRole authentication.
+class _VaultAuthenticatedClient:
+    """The hvac client plus the token/AppRole lifecycle every Vault-backed type needs.
 
-    This client provides:
-    - AppRole authentication with automatic token refresh
-    - Thread-safe token caching
-    - KV v2 read/write operations
-    - Path prefix support for multi-tenant isolation
+    Provides:
+    - the HTTPS-only transport policy (plain HTTP needs an explicit opt-in) and a
+      client that never follows redirects
+    - static token auth (dev mode) or AppRole auth with automatic token refresh,
+      re-resolving ``*_file`` credentials on every login
+    - thread-safe token caching
 
-    Example:
-        config = VaultBackendConfig(
-            address="http://vault:8200",
-            role_id="abc123",
-            secret_id="xyz789",
-        )
-        backend = VaultSecretsBackend(config)
-
-        # Read a secret
-        data = backend.read("orgs/default/secrets/db")
-        password = data["password"]
-
-        # Write a secret
-        backend.write("orgs/default/secrets/db", {"password": "new-pass"})
+    Subclasses add the engine-specific operations: KV v2 in
+    :class:`VaultSecretsBackend`, SSH one-time passwords in ``ssh_otp_client``. This
+    class deliberately implements none of the ``SecretBackend`` methods -- and in
+    particular no ``list`` -- because the host feature-detects optional capabilities
+    on the instance with ``hasattr``.
     """
 
-    def __init__(self, config: VaultBackendConfig):
-        """Initialize the Vault backend.
+    _config: VaultConnectionConfig
+
+    def __init__(self, config: VaultConnectionConfig):
+        """Build the hvac client and validate the configured auth method.
 
         Args:
-            config: Vault backend configuration
+            config: Connection and authentication settings
 
         Raises:
             ImportError: If hvac library is not installed
-            ValueError: If token auth not provided and neither role_id nor role_id_file is provided
+            ValueError: If the address is not HTTPS without the explicit opt-in, or
+                token auth is not provided and neither role_id nor role_id_file is
+                provided
         """
         try:
             import hvac
@@ -418,6 +447,46 @@ class VaultSecretsBackend:
         except Exception as e:
             logger.error("Vault authentication failed: %s", e)
             raise VaultAuthError(f"Vault AppRole authentication failed: {e}") from e
+
+
+class VaultSecretsBackend(_VaultAuthenticatedClient):
+    """Vault KV v2 secrets backend using AppRole authentication.
+
+    This client provides:
+    - AppRole authentication with automatic token refresh
+    - Thread-safe token caching
+    - KV v2 read/write operations
+    - Path prefix support for multi-tenant isolation
+
+    Example:
+        config = VaultBackendConfig(
+            address="http://vault:8200",
+            role_id="abc123",
+            secret_id="xyz789",
+        )
+        backend = VaultSecretsBackend(config)
+
+        # Read a secret
+        data = backend.read("orgs/default/secrets/db")
+        password = data["password"]
+
+        # Write a secret
+        backend.write("orgs/default/secrets/db", {"password": "new-pass"})
+    """
+
+    _config: VaultBackendConfig
+
+    def __init__(self, config: VaultBackendConfig):
+        """Initialize the Vault backend.
+
+        Args:
+            config: Vault backend configuration
+
+        Raises:
+            ImportError: If hvac library is not installed
+            ValueError: If token auth not provided and neither role_id nor role_id_file is provided
+        """
+        super().__init__(config)
 
     def _full_path(self, path: str) -> str:
         """Build full path including prefix.
