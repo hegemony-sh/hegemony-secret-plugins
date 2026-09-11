@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 HashiCorp Vault and OpenBao secret backend plugin for Hegemony, packaged as an
 out-of-tree wheel. It is discovered at runtime via the
 `hegemony.secret_backends` entry-point group
-(`vault = "hegemony_secret_vault:register"`) and contributes three backend type
+(`vault = "hegemony_secret_vault:register"`) and contributes five backend type
 strings:
 
 | Backend type | Display name | Notes |
@@ -17,10 +17,13 @@ strings:
 | `vault` | HashiCorp Vault (KV v2) | Generic, preferred Vault KV v2 backend |
 | `vault_kv2` | HashiCorp Vault (KV v2, legacy type) | Legacy alias of `vault` (same client); registered **hidden** — existing backends of this type keep working, but it no longer appears in the create-form type picker |
 | `openbao` | OpenBao (KV v2) | [OpenBao](https://openbao.org), the Linux Foundation fork of Vault. Used by the host's bundled internal backend |
+| `vault_ssh_otp` | HashiCorp Vault (SSH one-time passwords) | Mints a single-use SSH password per read from the [SSH secrets engine](https://developer.hashicorp.com/vault/docs/secrets/ssh/one-time-ssh-passwords). Reference-only — see [SSH one-time passwords](#ssh-one-time-passwords) |
+| `openbao_ssh_otp` | OpenBao (SSH one-time passwords) | The same against [OpenBao's SSH engine](https://openbao.org/docs/secrets/ssh/) |
 
-All three types build the same `VaultSecretsBackend`, which supports static
-token auth (dev mode) and AppRole auth (production), with thread-safe token
-caching and automatic re-authentication.
+The three KV types build the same `VaultSecretsBackend` and the two OTP types
+the same `VaultSshOtpBackend`. Both support static token auth (dev mode) and
+AppRole auth (production), with thread-safe token caching and automatic
+re-authentication, and share the HTTPS-only, no-redirect transport policy.
 
 ## Why OpenBao is a separate type, not a separate client
 
@@ -149,6 +152,66 @@ AppRole (production):
   "secret_id": "{{ env('VAULT_SECRET_ID') }}"
 }
 ```
+
+## SSH one-time passwords
+
+The `vault_ssh_otp` and `openbao_ssh_otp` types store nothing. Every `read`
+asks the SSH secrets engine to mint a one-time password (OTP) for one login on
+one host, and the reference names that login:
+
+```text
+{{ secret('ssh_otp://orgs/<slug>/<role>/<ip>/<username>/key') }}
+{{ secret('ssh_otp://orgs/acme/linux/10.0.0.5/ubuntu/key') }}
+```
+
+The path is exactly five segments. `orgs/<slug>` is the organization the
+reference belongs to: Hegemony confines every `orgs/<slug>/…` reference to the
+run's own organization before the backend is called, and the engine role is
+always `<slug>-<role>`, so an organization can only mint from roles that carry
+its own slug. The role segment may contain letters, digits and underscores but
+never a hyphen — slugs may contain hyphens, and a hyphen in the role would make
+`a` + `b-c` collide with `a-b` + `c`; there is deliberately no role-template
+setting for the same reason. `<ip>` must be a literal IP address (the engine
+binds the password to the address the target's `vault-ssh-helper` sees on its
+own interfaces) and `<username>` is the login the password is for.
+
+The final segment of the reference is the field: `key` is the password. The
+engine also answers `ip`, `port`, `username` and `key_type`, but every `read`
+mints a new password, so a reference to any other field mints one too.
+Reference `key` only and take the host and port from the device.
+
+What has to exist:
+
+- **On the server:** the SSH secrets engine enabled (`bao secrets enable
+  -path=ssh ssh`, or set `ssh_mount` to where it lives) and one role per
+  organization and host class with `key_type=otp`, for example
+  `bao write ssh/roles/acme-linux key_type=otp default_user=ubuntu allowed_users=ubuntu cidr_list=10.0.0.0/24`.
+  The credential Hegemony's worker authenticates with needs `update` on
+  `ssh/creds/+`. The host's bundled OpenBao grants exactly that to the worker
+  AppRole and nothing under `ssh/` to the API, which never mints.
+- **On the target hosts:** `vault-ssh-helper` configured in PAM and pointed at
+  the same server and mount, so the host verifies the password with the engine.
+  A password is valid for a single login.
+
+The config fields are the connection and auth fields of the KV types (the same
+names, so the `api_*`/`worker_*` overrides and the `*_file` rotation path
+apply unchanged) plus:
+
+| Field | Required | Default | Notes |
+|---|---|---|---|
+| `ssh_mount` | no | `ssh` | Mount point of the SSH secrets engine |
+
+Operational notes:
+
+- Mark the backend **read-only** in its Hegemony settings and never create or
+  claim managed secrets on it. `write` and `delete` refuse, there is no `list`
+  (browsing answers 501 and discovery skips the backend), and a managed
+  secret's detail view would mint a password on every read.
+- `test` proves the token with a token lookup and, when the policy allows,
+  lists the engine's roles to prove the mount. It never mints.
+- Only a step that opens one SSH session per device can use a one-time
+  password; in Hegemony that is `shell.execute`. Network-CLI transports
+  reconnect on every command and would consume the password on the first.
 
 ## Usage
 

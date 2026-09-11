@@ -24,7 +24,13 @@ class FakeRegistry:
 def test_register_adds_expected_backend_types():
     reg = FakeRegistry()
     plugin.register(reg)
-    assert set(reg.types) == {"vault", "vault_kv2", "openbao"}
+    assert set(reg.types) == {
+        "vault",
+        "vault_kv2",
+        "openbao",
+        "vault_ssh_otp",
+        "openbao_ssh_otp",
+    }
     assert reg.types["vault"]["factory"] is plugin.build_vault_backend
     assert reg.types["vault_kv2"]["factory"] is plugin.build_vault_backend
     # A distinct callable, so OpenBao's construction can diverge without touching Vault.
@@ -51,6 +57,8 @@ def test_register_display_names():
     assert reg.types["vault"]["display_name"] == "HashiCorp Vault (KV v2)"
     assert reg.types["vault_kv2"]["display_name"] == "HashiCorp Vault (KV v2, legacy type)"
     assert reg.types["openbao"]["display_name"] == "OpenBao (KV v2)"
+    assert reg.types["vault_ssh_otp"]["display_name"] == "HashiCorp Vault (SSH one-time passwords)"
+    assert reg.types["openbao_ssh_otp"]["display_name"] == "OpenBao (SSH one-time passwords)"
 
 
 def test_register_marks_only_vault_kv2_hidden():
@@ -61,6 +69,8 @@ def test_register_marks_only_vault_kv2_hidden():
     assert reg.types["vault_kv2"].get("hidden") is True
     assert reg.types["vault"].get("hidden", False) is False
     assert reg.types["openbao"].get("hidden", False) is False
+    assert reg.types["vault_ssh_otp"].get("hidden", False) is False
+    assert reg.types["openbao_ssh_otp"].get("hidden", False) is False
 
 
 def test_register_satisfies_sdk_registry_protocol():
@@ -578,7 +588,7 @@ def test_https_address_is_not_warned_about(caplog):
 def test_config_schema_exposes_the_plain_http_opt_in_defaulting_to_off():
     reg = FakeRegistry()
     plugin.register(reg)
-    for backend_type in ("vault", "vault_kv2", "openbao"):
+    for backend_type in ("vault", "vault_kv2", "openbao", "vault_ssh_otp", "openbao_ssh_otp"):
         field = reg.types[backend_type]["config_schema"]["properties"]["allow_insecure_http"]
         assert field["type"] == "boolean"
         assert field["default"] is False

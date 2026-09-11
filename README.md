@@ -31,7 +31,8 @@ Contributions require the [Hegemony Contributor License Agreement](CLA.md). See
 
 - **Auto-installed** with the platform (already present in Hegemony API and worker
   images): `hegemony-secret-sdk` and `hegemony-secret-vault` (the built-in KV v2
-  backends — `vault`, the hidden legacy alias `vault_kv2`, and `openbao`). One `hvac`
+  backends — `vault`, the hidden legacy alias `vault_kv2`, and `openbao` — and the
+  SSH one-time-password types `vault_ssh_otp` and `openbao_ssh_otp`). One `hvac`
   client serves both products because OpenBao keeps Vault's HTTP API. See its
   [README](plugins/secret_vault/README.md).
 - **Opt-in**: `hegemony-secret-1password` adds the 1Password backend
