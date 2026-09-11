@@ -16,7 +16,14 @@ configuration dict and returns a :class:`SecretBackend` instance.
 from __future__ import annotations
 
 from ._version import SDK_ABI_VERSION, __version__
-from .backend import ListableSecretBackend, SecretBackend
+from .backend import (
+    ListableSecretBackend,
+    SecretBackend,
+    SecretVersion,
+    VersionConflictError,
+    VersionedSecret,
+    VersionedSecretBackend,
+)
 from .registry import BackendFactory, SecretBackendRegistry
 
 #: The entry-point group out-of-tree secret backend plugins register under.
@@ -29,5 +36,9 @@ __all__ = [
     "ListableSecretBackend",
     "SecretBackend",
     "SecretBackendRegistry",
+    "SecretVersion",
+    "VersionConflictError",
+    "VersionedSecret",
+    "VersionedSecretBackend",
     "__version__",
 ]

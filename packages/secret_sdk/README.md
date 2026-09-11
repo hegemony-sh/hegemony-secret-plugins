@@ -19,8 +19,10 @@ exposes a `register(registry)` callable under the
 [project.entry-points."hegemony.secret_backends"]
 my_plugin = "my_plugin:register"
 
-[project.dependencies]
-hegemony-secret-sdk = ">=0.1,<0.2"
+[project]
+# Pin the exact SDK version of the release you build against, as the plugins in
+# this repository do; each release ships the SDK and its plugins together.
+dependencies = ["hegemony-secret-sdk==0.2.0"]
 ```
 
 ## Backends are leaf components
@@ -40,6 +42,7 @@ class MyBackend:
 
     def read(self, path: str) -> dict[str, str] | None: ...
     def write(self, path: str, data: dict[str, str]) -> None: ...
+    def delete(self, path: str) -> None: ...
     def test(self) -> None: ...
 
 
@@ -64,8 +67,31 @@ def register(registry: SecretBackendRegistry) -> None:
     )
 ```
 
-A backend implements `read`, `write`, and `test` (a lightweight connectivity/auth
-check that raises on failure). See [`SecretBackend`](src/hegemony_secret_sdk/backend.py).
+A backend implements `read`, `write`, `delete`, and `test` (a lightweight
+connectivity/auth check that raises on failure). See
+[`SecretBackend`](src/hegemony_secret_sdk/backend.py).
+
+### Optional capabilities
+
+Two further protocols are optional. The host feature-detects them on the backend
+*instance* (`hasattr`), so a backend that does not implement one simply does not get
+the feature; nothing in the registration contract changes and `SDK_ABI_VERSION`
+stays the same.
+
+- [`ListableSecretBackend`](src/hegemony_secret_sdk/backend.py) adds
+  `list(path="") -> list[str]`: the immediate children under `path`, containers
+  ending in `/`. The host uses it to browse a backend in Settings and to discover
+  secrets that exist in the backend but are not managed by Hegemony.
+- [`VersionedSecretBackend`](src/hegemony_secret_sdk/backend.py) adds versioned reads
+  and check-and-set writes. `read_versioned(path)` and `read_version(path, version)`
+  return a `VersionedSecret` — the data plus the version it was read at; a latest
+  version whose data was deleted comes back with empty data and `deleted=True`,
+  because the path is still occupied. `versions(path)` lists `SecretVersion`
+  entries, oldest first. `write_checked(path, data, expected_version=...)` writes
+  only when the current version equals `expected_version` (`0` means "nothing
+  stored yet") and returns the new version; otherwise it raises
+  `VersionConflictError` and writes nothing. The host uses it to make a secret
+  update fail with a conflict instead of silently overwriting a concurrent change.
 
 ### Config-schema extension keys
 
