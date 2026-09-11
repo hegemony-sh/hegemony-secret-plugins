@@ -27,10 +27,16 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from hegemony_secret_sdk import SecretVersion, VersionConflictError, VersionedSecret
+
 logger = logging.getLogger(__name__)
 
 # Token expiry buffer in seconds - refresh token this many seconds before expiry
 TOKEN_EXPIRY_BUFFER_SECONDS = 60
+
+# The KV v2 error text for a check-and-set write whose cas value is not the current
+# version. Vault and OpenBao answer it as an HTTP 400 (hvac: InvalidRequest).
+_CAS_MISMATCH_MARKER = "check-and-set parameter did not match the current version"
 
 # Per-request timeout. Unbounded requests let an unresponsive server pin the calling
 # thread indefinitely, which in the worker means losing a slot per stuck resolution.
@@ -89,6 +95,36 @@ def _normalize_auth_value(value: Any) -> str | None:
         return None
     normalized = str(value).strip()
     return normalized or None
+
+
+def _version_metadata_from_error(error: Any) -> Mapping[str, Any] | None:
+    """The KV v2 version metadata carried by a 404, or ``None`` for a path that never existed.
+
+    Reading a deleted or destroyed version answers 404 with the version's metadata in
+    the body; a path with no versions at all answers 404 without it. hvac keeps the
+    decoded body on the exception as ``json``.
+    """
+    body = getattr(error, "json", None)
+    if not isinstance(body, Mapping):
+        return None
+    data = body.get("data")
+    if not isinstance(data, Mapping):
+        return None
+    metadata = data.get("metadata")
+    if not isinstance(metadata, Mapping) or "version" not in metadata:
+        return None
+    return metadata
+
+
+def _versioned_secret(payload: Mapping[str, Any]) -> VersionedSecret:
+    """Build a :class:`VersionedSecret` from a KV v2 ``data`` payload (``data`` + ``metadata``)."""
+    metadata = payload.get("metadata") or {}
+    data = payload.get("data")
+    version = int(metadata.get("version") or 0)
+    created_at = metadata.get("created_time") or None
+    if data is None:
+        return VersionedSecret(data={}, version=version, created_at=created_at, deleted=True)
+    return VersionedSecret(data=dict(data), version=version, created_at=created_at)
 
 
 @dataclass
@@ -525,6 +561,10 @@ class VaultSecretsBackend(_VaultAuthenticatedClient):
                 self._client.secrets.kv.v2.read_secret_version(
                     path=full_path,
                     mount_point=self._config.kv_mount,
+                    # Explicit: hvac 2.x warns on every call that leaves it unset, and
+                    # the pre-3.0 default (True: a deleted version is a 404) is what the
+                    # SecretBackend contract wants from read().
+                    raise_on_deleted_version=True,
                 ),
                 "read",
             )
@@ -705,6 +745,146 @@ class VaultSecretsBackend(_VaultAuthenticatedClient):
         except Exception as e:
             logger.error("Vault connectivity check failed: %s", e)
             raise VaultError(f"Vault connectivity check failed: {e}") from e
+
+    # --- KV v2 versions: the optional VersionedSecretBackend capability ------------
+
+    def _read_versioned_at(self, path: str, version: int | None) -> VersionedSecret | None:
+        from hvac.exceptions import InvalidPath
+
+        self._ensure_authenticated()
+
+        full_path = self._full_path(path)
+        kwargs: dict[str, Any] = {
+            "path": full_path,
+            "mount_point": self._config.kv_mount,
+            "raise_on_deleted_version": True,
+        }
+        if version is not None:
+            kwargs["version"] = version
+
+        try:
+            response = _reject_redirect(
+                self._client.secrets.kv.v2.read_secret_version(**kwargs), "read"
+            )
+        except InvalidPath as e:
+            # A deleted or destroyed version still occupies the path, so a check-and-set
+            # caller must learn its number rather than "nothing there" (cas=0 would then
+            # fail forever on a path an operator soft-deleted).
+            metadata = _version_metadata_from_error(e)
+            if metadata is None:
+                logger.debug("Value not found at path: %s", full_path)
+                return None
+            return _versioned_secret({"data": None, "metadata": metadata})
+        except VaultError:
+            raise
+        except Exception as e:
+            logger.error("Vault read failed for path %s: %s", full_path, e)
+            raise VaultError(f"Failed to read secret from Vault: {e}") from e
+
+        if response is None:
+            return None
+        return _versioned_secret(response.get("data") or {})
+
+    def read_versioned(self, path: str) -> VersionedSecret | None:
+        """Read the latest version at ``path`` with its version number.
+
+        A deleted or destroyed latest version comes back with empty data and
+        ``deleted=True``; ``None`` means nothing was ever stored at ``path``.
+        """
+        return self._read_versioned_at(path, None)
+
+    def read_version(self, path: str, version: int) -> VersionedSecret | None:
+        """Read one specific version at ``path``; ``None`` if the path does not exist."""
+        return self._read_versioned_at(path, version)
+
+    def versions(self, path: str) -> builtins.list[SecretVersion]:
+        """List every version at ``path`` from its KV v2 metadata, oldest first."""
+        from hvac.exceptions import InvalidPath
+
+        self._ensure_authenticated()
+
+        full_path = self._full_path(path)
+
+        try:
+            response = _reject_redirect(
+                self._client.secrets.kv.v2.read_secret_metadata(
+                    path=full_path,
+                    mount_point=self._config.kv_mount,
+                ),
+                "metadata read",
+            )
+        except InvalidPath:
+            return []
+        except VaultError:
+            raise
+        except Exception as e:
+            logger.error("Vault metadata read failed for path %s: %s", full_path, e)
+            raise VaultError(f"Failed to read secret metadata from Vault: {e}") from e
+
+        if response is None:
+            return []
+        entries = (response.get("data") or {}).get("versions") or {}
+        listed = [
+            SecretVersion(
+                version=int(number),
+                created_at=(info or {}).get("created_time") or None,
+                deleted=bool((info or {}).get("deletion_time")),
+                destroyed=bool((info or {}).get("destroyed")),
+            )
+            for number, info in entries.items()
+        ]
+        listed.sort(key=lambda entry: entry.version)
+        return listed
+
+    def write_checked(self, path: str, data: Mapping[str, Any], *, expected_version: int) -> int:
+        """Write ``data`` only if the current version is ``expected_version`` (KV v2 cas).
+
+        ``expected_version=0`` writes only when the path holds no version at all. Returns
+        the version just written.
+
+        Raises:
+            VersionConflictError: If the current version differs; nothing was written.
+            VaultError: If the write fails for any other reason.
+        """
+        from hvac.exceptions import InvalidRequest
+
+        if expected_version < 0:
+            raise ValueError(f"expected_version must be 0 or a version number: {expected_version}")
+
+        self._ensure_authenticated()
+
+        full_path = self._full_path(path)
+
+        try:
+            response = _reject_redirect(
+                self._client.secrets.kv.v2.create_or_update_secret(
+                    path=full_path,
+                    secret=data,
+                    cas=expected_version,
+                    mount_point=self._config.kv_mount,
+                ),
+                "write",
+            )
+        except InvalidRequest as e:
+            if _CAS_MISMATCH_MARKER in str(e):
+                raise VersionConflictError(path, expected_version) from e
+            logger.error("Vault write failed for path %s: %s", full_path, e)
+            raise VaultError(f"Failed to write secret to Vault: {e}") from e
+        except VaultError:
+            raise
+        except Exception as e:
+            logger.error("Vault write failed for path %s: %s", full_path, e)
+            raise VaultError(f"Failed to write secret to Vault: {e}") from e
+
+        version = None
+        if isinstance(response, Mapping):
+            version = (response.get("data") or {}).get("version")
+        if version is None:
+            raise VaultError(
+                f"Vault write to {full_path} returned no version number; the mount may not be KV v2"
+            )
+        logger.debug("Value written to path %s as version %s", full_path, version)
+        return int(version)
 
 
 class VaultError(Exception):

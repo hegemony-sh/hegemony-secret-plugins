@@ -7,6 +7,8 @@
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import hegemony_secret_vault as plugin
 from hegemony_secret_vault.vault_client import VaultBackendConfig, VaultSecretsBackend
 
@@ -204,7 +206,7 @@ def test_read_returns_kv2_data():
     result = backend.read("orgs/default/secrets/db")
     assert result == {"password": "hunter2"}
     mock_client.secrets.kv.v2.read_secret_version.assert_called_once_with(
-        path="orgs/default/secrets/db", mount_point="hegemony"
+        path="orgs/default/secrets/db", mount_point="hegemony", raise_on_deleted_version=True
     )
 
 
@@ -682,3 +684,236 @@ def test_a_non_redirect_response_passes_through_untouched():
         "data": {"data": {"password": "hunter2"}}
     }
     assert backend.read("a/b") == {"password": "hunter2"}
+
+
+# --- KV v2 versions (the optional VersionedSecretBackend capability) ------------------
+
+
+def _kv_payload(
+    data,
+    *,
+    version: int = 3,
+    created: str | None = "2026-01-01T00:00:00Z",
+    deletion_time: str = "",
+    destroyed: bool = False,
+) -> dict[str, Any]:
+    return {
+        "data": {
+            "data": data,
+            "metadata": {
+                "version": version,
+                "created_time": created,
+                "deletion_time": deletion_time,
+                "destroyed": destroyed,
+            },
+        }
+    }
+
+
+def test_read_versioned_returns_data_and_version():
+    from hegemony_secret_sdk import VersionedSecret
+
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.read_secret_version.return_value = _kv_payload(
+        {"password": "hunter2"}
+    )
+
+    result = backend.read_versioned("orgs/default/secrets/db")
+
+    assert result == VersionedSecret(
+        data={"password": "hunter2"}, version=3, created_at="2026-01-01T00:00:00Z"
+    )
+    assert result is not None and result.deleted is False
+    mock_client.secrets.kv.v2.read_secret_version.assert_called_once_with(
+        path="orgs/default/secrets/db", mount_point="hegemony", raise_on_deleted_version=True
+    )
+
+
+def test_read_versioned_reports_a_deleted_latest_version_with_its_number():
+    """A soft-deleted path still occupies its version number.
+
+    A check-and-set caller must carry that number, not 0: cas=0 on such a path
+    fails forever, so today's create-after-delete would turn into a permanent 409.
+    """
+    from hvac.exceptions import InvalidPath
+
+    from hegemony_secret_sdk import VersionedSecret
+
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.read_secret_version.side_effect = InvalidPath(
+        json=_kv_payload(None, version=4, deletion_time="2026-02-03T00:00:00Z")
+    )
+
+    result = backend.read_versioned("orgs/default/secrets/db")
+
+    assert result == VersionedSecret(
+        data={}, version=4, created_at="2026-01-01T00:00:00Z", deleted=True
+    )
+
+
+def test_read_versioned_treats_a_null_data_answer_as_deleted():
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.read_secret_version.return_value = _kv_payload(
+        None, version=2, destroyed=True
+    )
+    result = backend.read_versioned("orgs/default/secrets/db")
+    assert result is not None
+    assert result.deleted is True
+    assert result.version == 2
+    assert result.data == {}
+
+
+def test_read_versioned_missing_path_returns_none():
+    from hvac.exceptions import InvalidPath
+
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.read_secret_version.side_effect = InvalidPath()
+    assert backend.read_versioned("orgs/default/secrets/nope") is None
+
+
+def test_read_version_passes_the_requested_version():
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.read_secret_version.return_value = _kv_payload(
+        {"password": "older"}, version=2
+    )
+
+    result = backend.read_version("orgs/default/secrets/db", 2)
+
+    assert result is not None
+    assert result.data == {"password": "older"}
+    assert result.version == 2
+    mock_client.secrets.kv.v2.read_secret_version.assert_called_once_with(
+        path="orgs/default/secrets/db",
+        mount_point="hegemony",
+        raise_on_deleted_version=True,
+        version=2,
+    )
+
+
+def test_read_versioned_applies_the_path_prefix():
+    backend, mock_client = _backend_with_mock_client(path_prefix="tenant-a/")
+    mock_client.secrets.kv.v2.read_secret_version.return_value = _kv_payload({"k": "v"})
+    backend.read_versioned("orgs/default/secrets/db")
+    kwargs = mock_client.secrets.kv.v2.read_secret_version.call_args.kwargs
+    assert kwargs["path"] == "tenant-a/orgs/default/secrets/db"
+
+
+def test_versions_maps_and_sorts_the_metadata():
+    from hegemony_secret_sdk import SecretVersion
+
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.read_secret_metadata.return_value = {
+        "data": {
+            "current_version": 3,
+            "versions": {
+                "3": {"created_time": "2026-03-01T00:00:00Z", "deletion_time": ""},
+                "1": {
+                    "created_time": "2026-01-01T00:00:00Z",
+                    "deletion_time": "2026-01-02T00:00:00Z",
+                    "destroyed": False,
+                },
+                "2": {"created_time": "2026-02-01T00:00:00Z", "destroyed": True},
+            },
+        }
+    }
+
+    assert backend.versions("orgs/default/secrets/db") == [
+        SecretVersion(version=1, created_at="2026-01-01T00:00:00Z", deleted=True, destroyed=False),
+        SecretVersion(version=2, created_at="2026-02-01T00:00:00Z", deleted=False, destroyed=True),
+        SecretVersion(version=3, created_at="2026-03-01T00:00:00Z", deleted=False, destroyed=False),
+    ]
+    mock_client.secrets.kv.v2.read_secret_metadata.assert_called_once_with(
+        path="orgs/default/secrets/db", mount_point="hegemony"
+    )
+
+
+def test_versions_missing_path_returns_empty():
+    from hvac.exceptions import InvalidPath
+
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.read_secret_metadata.side_effect = InvalidPath()
+    assert backend.versions("orgs/default/secrets/nope") == []
+
+
+def test_write_checked_passes_cas_and_returns_the_new_version():
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.create_or_update_secret.return_value = {
+        "data": {"version": 4, "created_time": "2026-04-01T00:00:00Z", "destroyed": False}
+    }
+
+    assert backend.write_checked("orgs/default/secrets/db", {"k": "v"}, expected_version=3) == 4
+
+    mock_client.secrets.kv.v2.create_or_update_secret.assert_called_once_with(
+        path="orgs/default/secrets/db", secret={"k": "v"}, cas=3, mount_point="hegemony"
+    )
+
+
+def test_write_checked_zero_means_create_only():
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.create_or_update_secret.return_value = {"data": {"version": 1}}
+    assert backend.write_checked("orgs/default/secrets/db", {"k": "v"}, expected_version=0) == 1
+    assert mock_client.secrets.kv.v2.create_or_update_secret.call_args.kwargs["cas"] == 0
+
+
+def test_write_checked_rejects_a_negative_expected_version():
+    backend, mock_client = _backend_with_mock_client()
+    with pytest.raises(ValueError):
+        backend.write_checked("orgs/default/secrets/db", {"k": "v"}, expected_version=-1)
+    mock_client.secrets.kv.v2.create_or_update_secret.assert_not_called()
+
+
+def test_write_checked_maps_a_cas_mismatch_to_a_version_conflict():
+    from hvac.exceptions import InvalidRequest
+
+    from hegemony_secret_sdk import VersionConflictError
+
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.create_or_update_secret.side_effect = InvalidRequest(
+        errors=["check-and-set parameter did not match the current version"]
+    )
+
+    with pytest.raises(VersionConflictError) as exc_info:
+        backend.write_checked("orgs/default/secrets/db", {"k": "v"}, expected_version=3)
+
+    assert exc_info.value.path == "orgs/default/secrets/db"
+    assert exc_info.value.expected_version == 3
+
+
+def test_write_checked_keeps_other_bad_requests_as_vault_errors():
+    from hvac.exceptions import InvalidRequest
+
+    from hegemony_secret_sdk import VersionConflictError
+    from hegemony_secret_vault.vault_client import VaultError
+
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.create_or_update_secret.side_effect = InvalidRequest(
+        errors=["value is too large"]
+    )
+    with pytest.raises(VaultError) as exc_info:
+        backend.write_checked("orgs/default/secrets/db", {"k": "v"}, expected_version=3)
+    assert not isinstance(exc_info.value, VersionConflictError)
+
+
+def test_write_checked_refuses_a_redirect():
+    from hegemony_secret_vault.vault_client import VaultError
+
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.create_or_update_secret.return_value = _redirect_response()
+    with pytest.raises(VaultError, match="307"):
+        backend.write_checked("orgs/default/secrets/db", {"k": "v"}, expected_version=3)
+
+
+def test_write_checked_without_a_version_in_the_answer_is_an_error():
+    from hegemony_secret_vault.vault_client import VaultError
+
+    backend, mock_client = _backend_with_mock_client()
+    mock_client.secrets.kv.v2.create_or_update_secret.return_value = None
+    with pytest.raises(VaultError, match="version"):
+        backend.write_checked("orgs/default/secrets/db", {"k": "v"}, expected_version=3)
+
+
+def test_backend_satisfies_versioned_protocol():
+    from hegemony_secret_sdk import VersionedSecretBackend
+
+    backend, _ = _backend_with_mock_client()
+    assert isinstance(backend, VersionedSecretBackend)

@@ -153,6 +153,20 @@ AppRole (production):
 }
 ```
 
+## KV v2 versions
+
+The KV types implement the SDK's optional `VersionedSecretBackend` capability
+on top of KV v2's own versioning: `read_versioned` and `read_version` return
+the data together with the version it was read at (a deleted or destroyed
+latest version comes back with empty data and `deleted=True`, because it still
+occupies the path), `versions` lists the metadata's versions oldest first, and
+`write_checked(path, data, expected_version=N)` is a check-and-set write
+(`cas=N`; `0` means "create only") that raises `VersionConflictError` when the
+current version is not `N`. The host uses it to turn a concurrent update into
+a conflict instead of a silent overwrite. `delete` is unchanged: it destroys
+the metadata and every version. The API policy already grants what these
+need (`read` on `data/`, `read` on `metadata/`, `update` on `data/`).
+
 ## SSH one-time passwords
 
 The `vault_ssh_otp` and `openbao_ssh_otp` types store nothing. Every `read`
