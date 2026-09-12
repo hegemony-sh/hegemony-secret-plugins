@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version as _package_version
 from typing import Any, TypeVar
 
-from .fields import build_field_mapping
+from .fields import FieldEntry, build_field_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -69,14 +69,15 @@ def _section_titles(item: Any) -> dict[str, str]:
     return titles
 
 
-def _field_values(field: Any) -> list[tuple[str, str]]:
-    """The ``(key, value)`` pairs a Service Account field contributes.
+def _field_values(field: Any) -> list[tuple[str, str, bool]]:
+    """The ``(key, value, generated)`` triples a Service Account field contributes.
 
     A TOTP field carries its seed in ``value`` and the computed code in
     ``details.content.code``; only the code is ever returned. An SshKey field
     contributes the private key (as 1Password stores it) under its title plus the
     computed ``public_key``/``fingerprint``/``key_type`` attributes when the SDK
-    supplies them. A field without a value contributes nothing.
+    supplies them -- those are *generated* keys, so a field that really carries
+    such a name wins over them. A field without a value contributes nothing.
     """
     from onepassword import ItemFieldType
 
@@ -97,28 +98,30 @@ def _field_values(field: Any) -> list[tuple[str, str]]:
                 f" ({reason})" if reason else "",
             )
             return []
-        return [(title, str(code))]
+        return [(title, str(code), False)]
 
     value = getattr(field, "value", None)
     if value is None:
         return []
-    pairs = [(title, str(value))]
+    triples = [(title, str(value), False)]
     if field_type == ItemFieldType.SSHKEY and content is not None:
         for attribute in _SSH_KEY_ATTRIBUTES:
             attribute_value = getattr(content, attribute, None)
             if attribute_value:
-                pairs.append((f"{title}.{attribute}", str(attribute_value)))
-    return pairs
+                triples.append((f"{title}.{attribute}", str(attribute_value), True))
+    return triples
 
 
-def _field_entries(item: Any) -> list[tuple[str, str | None, str]]:
-    """Extract ``(title, section title, value)`` triples from a Service Account item."""
+def _field_entries(item: Any) -> list[FieldEntry]:
+    """Extract field entries from a Service Account item."""
     sections = _section_titles(item)
-    entries: list[tuple[str, str | None, str]] = []
+    entries: list[FieldEntry] = []
     for field in getattr(item, "fields", None) or []:
         section_id = getattr(field, "section_id", None)
         section = sections.get(str(section_id)) if section_id else None
-        entries.extend((key, section, value) for key, value in _field_values(field))
+        entries.extend(
+            (key, section, value, generated) for key, value, generated in _field_values(field)
+        )
     return entries
 
 

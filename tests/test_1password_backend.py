@@ -259,6 +259,27 @@ def test_connect_read_identical_duplicates_do_not_warn(caplog):
     assert not caplog.records
 
 
+def test_connect_read_never_lets_a_section_alias_shadow_a_real_field(caplog):
+    import logging
+
+    backend, mock_client = _connect_backend_with_mock_client()
+    mock_client.get_item.return_value = _fake_connect_item(
+        [
+            _fake_field("Admin.password", "the-real-field"),
+            _fake_field("password", "in-the-admin-section", section_id="s1"),
+        ],
+        sections=(("s1", "Admin"),),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = backend.read("Engineering/Database")
+
+    # The field that really carries the name wins; item order never decides.
+    assert result == {"Admin.password": "the-real-field", "password": "in-the-admin-section"}
+    assert any("Admin.password" in record.message for record in caplog.records)
+    assert not any("the-real-field" in record.message for record in caplog.records)
+
+
 def test_connect_read_raises_value_error_for_malformed_path():
     backend, _ = _connect_backend_with_mock_client()
     try:
@@ -567,6 +588,45 @@ def test_service_account_read_ssh_key_without_details_keeps_only_the_private_key
     assert backend.read("Engineering/Database") == {
         "private key": "-----BEGIN OPENSSH PRIVATE KEY-----"
     }
+
+
+def test_service_account_read_never_lets_an_ssh_attribute_shadow_a_real_field(caplog):
+    import logging
+
+    from onepassword import ItemFieldType
+    from onepassword.types import ItemFieldDetailsSshKey, SshKeyAttributes
+
+    backend, mock_client = _service_account_backend_with_mock_client()
+    mock_client.items.get = AsyncMock(
+        return_value=_fake_sa_item(
+            [
+                _fake_item_field(
+                    "private key",
+                    "-----BEGIN OPENSSH PRIVATE KEY-----",
+                    field_type=ItemFieldType.SSHKEY,
+                    details=ItemFieldDetailsSshKey(
+                        content=SshKeyAttributes(
+                            publicKey="ssh-ed25519 AAAA derived",
+                            fingerprint="SHA256:derived",
+                            keyType="Ed25519",
+                        )
+                    ),
+                ),
+                _fake_item_field("private key.public_key", "ssh-ed25519 BBBB user-typed"),
+            ]
+        )
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = backend.read("Engineering/Database")
+
+    assert result == {
+        "private key": "-----BEGIN OPENSSH PRIVATE KEY-----",
+        "private key.public_key": "ssh-ed25519 BBBB user-typed",
+        "private key.fingerprint": "SHA256:derived",
+        "private key.key_type": "Ed25519",
+    }
+    assert any("private key.public_key" in record.message for record in caplog.records)
 
 
 def test_service_account_read_adds_section_qualified_keys_and_warns_on_duplicates(caplog):

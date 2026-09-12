@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, cast
 
-from .fields import build_field_mapping
+from .fields import FieldEntry, build_field_mapping
 
 logger = logging.getLogger(__name__)
 
@@ -88,10 +88,10 @@ def _field_value(field: Any) -> str | None:
     return None if value is None else str(value)
 
 
-def _field_entries(item: Any) -> list[tuple[str, str | None, str]]:
-    """Extract ``(label, section label, value)`` triples from a Connect item."""
+def _field_entries(item: Any) -> list[FieldEntry]:
+    """Extract field entries from a Connect item (it derives no generated keys)."""
     sections = _section_labels(item)
-    entries: list[tuple[str, str | None, str]] = []
+    entries: list[FieldEntry] = []
     for field in getattr(item, "fields", None) or []:
         label = getattr(field, "label", None)
         if not label:
@@ -101,7 +101,7 @@ def _field_entries(item: Any) -> list[tuple[str, str | None, str]]:
             continue
         section_id = getattr(getattr(field, "section", None), "id", None)
         section = sections.get(str(section_id)) if section_id else None
-        entries.append((str(label), section, value))
+        entries.append((str(label), section, value, False))
     return entries
 
 

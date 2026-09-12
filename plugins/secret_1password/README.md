@@ -82,6 +82,10 @@ backend type.
   `<field>.fingerprint` and `<field>.key_type` when the SDK computes them, for
   example `{{ secret('onepassword://Engineering/Bastion/private key.public_key') }}`.
 - Fields without a value are omitted.
+- A field that really carries a generated-looking name (say a field titled
+  `Admin.password`, or `private key.public_key`) keeps it: the field wins, the
+  generated key is dropped for that name, and the plugin logs a warning. Item
+  order never decides between a field and a synthetic key.
 
 > **Upgrading from 0.2.x:** a reference to a one-time-password field used to
 > return the seed URI; it now returns the current code. Everything else keeps
