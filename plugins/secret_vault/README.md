@@ -138,6 +138,7 @@ Minimal config (dev mode, static token):
 ```json
 {
   "address": "http://vault:8200",
+  "allow_insecure_http": true,
   "token": "{{ env('VAULT_TOKEN') }}"
 }
 ```
