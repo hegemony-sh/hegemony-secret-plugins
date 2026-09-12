@@ -30,19 +30,15 @@ class SecretBackend(Protocol):
 
     def read(self, path: str) -> Mapping[str, Any] | None:
         """Read the secret stored at ``path``; return ``None`` if it does not exist."""
-        ...
 
     def write(self, path: str, data: Mapping[str, Any]) -> None:
         """Write ``data`` to the secret stored at ``path``."""
-        ...
 
     def delete(self, path: str) -> None:
         """Delete the secret stored at ``path``; deleting a missing secret is not an error."""
-        ...
 
     def test(self) -> None:
         """Verify connectivity/authentication against the backend; raise on failure."""
-        ...
 
 
 @runtime_checkable
@@ -60,7 +56,6 @@ class ListableSecretBackend(SecretBackend, Protocol):
         Container entries (which can be listed further) end with ``"/"``; leaf entries
         (readable secret paths) do not. An unknown or empty ``path`` returns ``[]``.
         """
-        ...
 
 
 @dataclass(frozen=True)
@@ -121,15 +116,12 @@ class VersionedSecretBackend(SecretBackend, Protocol):
         ``data`` and ``deleted=True`` rather than as ``None``, because the path is
         still occupied. Return ``None`` only when nothing was ever stored at ``path``.
         """
-        ...
 
     def read_version(self, path: str, version: int) -> VersionedSecret | None:
         """Read one specific version at ``path``; ``None`` if the path does not exist."""
-        ...
 
     def versions(self, path: str) -> builtins.list[SecretVersion]:
         """List every version at ``path``, oldest first; ``[]`` for an unknown path."""
-        ...
 
     def write_checked(self, path: str, data: Mapping[str, Any], *, expected_version: int) -> int:
         """Write ``data`` only if the current version at ``path`` is ``expected_version``.
@@ -138,4 +130,3 @@ class VersionedSecretBackend(SecretBackend, Protocol):
         version number just written. Raises :class:`VersionConflictError` when the
         current version differs; the backend then wrote nothing.
         """
-        ...
