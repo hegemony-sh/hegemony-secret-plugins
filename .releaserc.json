@@ -86,10 +86,9 @@
         "assets": [
           "CHANGELOG.md",
           "uv.lock",
-          "packages/secret_sdk/pyproject.toml",
-          "plugins/secret_vault/pyproject.toml",
-          "plugins/secret_1password/pyproject.toml",
-          "packages/secret_sdk/src/hegemony_secret_sdk/_version.py"
+          "packages/*/pyproject.toml",
+          "plugins/*/pyproject.toml",
+          "packages/*/src/*/_version.py"
         ],
         "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
       }
