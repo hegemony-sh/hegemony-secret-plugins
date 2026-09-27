@@ -54,3 +54,30 @@ class ListableSecretBackend(SecretBackend, Protocol):
         (readable secret paths) do not. An unknown or empty ``path`` returns ``[]``.
         """
         ...
+
+
+@runtime_checkable
+class DataKeyWrappingSecretBackend(SecretBackend, Protocol):
+    """A backend that can issue and unwrap data keys for envelope encryption.
+
+    The host encrypts large blobs it must keep (Terraform state, for one) with a fresh
+    data key, and stores only the key's *wrapped* form next to the ciphertext: the key
+    that wraps it never leaves the secret store, so a database dump alone reveals
+    nothing, rotation happens in the store, and every unwrap is in the store's audit log.
+    Vault and OpenBao implement this with the Transit secrets engine.
+
+    Implementing this protocol is optional; the host feature-detects it (``hasattr``/
+    ``isinstance``) and falls back to its own key when absent.
+    """
+
+    def wrap_data_key(self, key_name: str) -> tuple[bytes, str]:
+        """Issue a fresh 256-bit data key under the wrapping key ``key_name``.
+
+        Returns ``(plaintext_key, wrapped_key)``: the host encrypts with the plaintext
+        and stores only the wrapped form. A missing wrapping key is created.
+        """
+        ...
+
+    def unwrap_data_key(self, key_name: str, wrapped_key: str) -> bytes:
+        """Return the plaintext of a data key :meth:`wrap_data_key` issued."""
+        ...

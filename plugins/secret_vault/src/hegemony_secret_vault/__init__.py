@@ -81,6 +81,15 @@ def _config_schema(product: str, address_example: str) -> dict[str, Any]:
                 "default": DEFAULT_TIMEOUT_SECONDS,
                 "minimum": 1,
             },
+            "transit_mount": {
+                "type": "string",
+                "title": "Transit mount point",
+                "description": (
+                    "Transit secrets engine mount used to wrap the data keys the platform "
+                    "encrypts stored Terraform state with. Only needed for that feature."
+                ),
+                "default": "transit",
+            },
             "token": {
                 **_SECRET_REF_FIELD,
                 "title": f"{product} token",

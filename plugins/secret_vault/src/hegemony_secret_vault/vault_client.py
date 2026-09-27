@@ -12,9 +12,11 @@ The client is designed to be used by both API and Worker components.
 
 from __future__ import annotations
 
+import base64
 import builtins
 import logging
 import os
+import re
 import threading
 import time
 from collections.abc import Mapping
@@ -29,6 +31,9 @@ TOKEN_EXPIRY_BUFFER_SECONDS = 60
 # Per-request timeout. Unbounded requests let an unresponsive server pin the calling
 # thread indefinitely, which in the worker means losing a slot per stuck resolution.
 DEFAULT_TIMEOUT_SECONDS = 30
+
+#: Transit key names the backend accepts (they become URL path segments).
+_TRANSIT_KEY_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 
 def _normalize_timeout(value: Any) -> int:
@@ -103,6 +108,7 @@ class VaultBackendConfig:
         allow_insecure_http: Opt in to a plain-HTTP address (default: False)
         namespace: Optional namespace to scope every request to (OpenBao / Vault Enterprise)
         timeout: Per-request timeout in seconds
+        transit_mount: Transit secrets engine mount used for data-key wrapping
     """
 
     address: str
@@ -118,6 +124,7 @@ class VaultBackendConfig:
     allow_insecure_http: bool = False
     namespace: str | None = None
     timeout: int = DEFAULT_TIMEOUT_SECONDS
+    transit_mount: str = "transit"
 
     @classmethod
     def from_dict(cls, config: dict) -> VaultBackendConfig:
@@ -150,6 +157,7 @@ class VaultBackendConfig:
             allow_insecure_http=bool(config.get("allow_insecure_http", False)),
             namespace=_normalize_auth_value(config.get("namespace")),
             timeout=_normalize_timeout(config.get("timeout")),
+            transit_mount=str(config.get("transit_mount") or "transit"),
         )
 
 
@@ -582,6 +590,81 @@ class VaultSecretsBackend:
         except Exception as e:
             logger.error("Vault list failed for path %s: %s", full_path, e)
             raise VaultError(f"Failed to list secrets in Vault: {e}") from e
+
+    def wrap_data_key(self, key_name: str) -> tuple[bytes, str]:
+        """Issue a fresh 256-bit data key wrapped by the Transit key ``key_name``.
+
+        Uses ``transit/datakey/plaintext/<key_name>``: the plaintext comes back once for
+        the caller to encrypt with, the ciphertext is what the caller stores. A missing
+        Transit key is created (``aes256-gcm96``) and the request retried once.
+
+        Raises:
+            ValueError: ``key_name`` is not a valid Transit key name.
+            VaultError: The request failed (missing mount, missing policy, ...).
+        """
+        from hvac.exceptions import InvalidPath, InvalidRequest
+
+        name = self._transit_key_name(key_name)
+        self._ensure_authenticated()
+        transit = self._client.secrets.transit
+        mount = self._config.transit_mount
+
+        def _generate() -> Any:
+            return _reject_redirect(
+                transit.generate_data_key(name=name, key_type="plaintext", mount_point=mount),
+                "data key generation",
+            )
+
+        try:
+            try:
+                response = _generate()
+            except (InvalidPath, InvalidRequest) as e:
+                if "not found" not in str(e).lower() and not isinstance(e, InvalidPath):
+                    raise
+                logger.info("Creating Transit key %s on mount %s", name, mount)
+                _reject_redirect(
+                    transit.create_key(name=name, key_type="aes256-gcm96", mount_point=mount),
+                    "transit key creation",
+                )
+                response = _generate()
+            data = response["data"]
+            return base64.b64decode(data["plaintext"]), str(data["ciphertext"])
+        except VaultError:
+            raise
+        except Exception as e:
+            logger.error("Vault data key generation failed for key %s: %s", name, e)
+            raise VaultError(f"Failed to generate a data key with Transit: {e}") from e
+
+    def unwrap_data_key(self, key_name: str, wrapped_key: str) -> bytes:
+        """Decrypt a data key :meth:`wrap_data_key` issued, with the Transit key ``key_name``.
+
+        Raises:
+            ValueError: ``key_name`` is not a valid Transit key name.
+            VaultError: The request failed (wrong key, missing policy, ...).
+        """
+        name = self._transit_key_name(key_name)
+        self._ensure_authenticated()
+        try:
+            response = _reject_redirect(
+                self._client.secrets.transit.decrypt_data(
+                    name=name,
+                    ciphertext=wrapped_key,
+                    mount_point=self._config.transit_mount,
+                ),
+                "data key unwrap",
+            )
+            return base64.b64decode(response["data"]["plaintext"])
+        except VaultError:
+            raise
+        except Exception as e:
+            logger.error("Vault data key unwrap failed for key %s: %s", name, e)
+            raise VaultError(f"Failed to unwrap a data key with Transit: {e}") from e
+
+    @staticmethod
+    def _transit_key_name(key_name: str) -> str:
+        if not isinstance(key_name, str) or not _TRANSIT_KEY_NAME_RE.match(key_name):
+            raise ValueError(f"invalid Transit key name {key_name!r}")
+        return key_name
 
     def test(self) -> None:
         """Verify connectivity and authentication against Vault.
