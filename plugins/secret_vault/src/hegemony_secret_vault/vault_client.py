@@ -32,8 +32,11 @@ TOKEN_EXPIRY_BUFFER_SECONDS = 60
 # thread indefinitely, which in the worker means losing a slot per stuck resolution.
 DEFAULT_TIMEOUT_SECONDS = 30
 
-#: Transit key names the backend accepts (they become URL path segments).
-_TRANSIT_KEY_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+#: Transit key names the backend accepts (they become URL path segments). Vault's own
+#: rule also wants a letter, digit or underscore at both ends.
+_TRANSIT_KEY_NAME_RE = re.compile(r"[A-Za-z0-9_](?:[A-Za-z0-9_-]{0,126}[A-Za-z0-9_])?")
+#: Size of the data keys wrap_data_key issues (the SDK contract: 256-bit keys).
+_DATA_KEY_BITS = 256
 
 
 def _normalize_timeout(value: Any) -> int:
@@ -157,7 +160,7 @@ class VaultBackendConfig:
             allow_insecure_http=bool(config.get("allow_insecure_http", False)),
             namespace=_normalize_auth_value(config.get("namespace")),
             timeout=_normalize_timeout(config.get("timeout")),
-            transit_mount=str(config.get("transit_mount") or "transit"),
+            transit_mount=str(config.get("transit_mount") or "").strip().strip("/") or "transit",
         )
 
 
@@ -611,15 +614,19 @@ class VaultSecretsBackend:
 
         def _generate() -> Any:
             return _reject_redirect(
-                transit.generate_data_key(name=name, key_type="plaintext", mount_point=mount),
+                transit.generate_data_key(
+                    name=name, key_type="plaintext", bits=_DATA_KEY_BITS, mount_point=mount
+                ),
                 "data key generation",
             )
 
         try:
             try:
                 response = _generate()
-            except (InvalidPath, InvalidRequest) as e:
-                if "not found" not in str(e).lower() and not isinstance(e, InvalidPath):
+            except InvalidRequest as e:
+                # A missing key is a 400 "encryption key not found". A missing or
+                # misnamed mount is a 404 (InvalidPath), handled below as it is.
+                if "encryption key not found" not in str(e).lower():
                     raise
                 logger.info("Creating Transit key %s on mount %s", name, mount)
                 _reject_redirect(
@@ -628,9 +635,20 @@ class VaultSecretsBackend:
                 )
                 response = _generate()
             data = response["data"]
-            return base64.b64decode(data["plaintext"]), str(data["ciphertext"])
+            plaintext = base64.b64decode(data["plaintext"], validate=True)
+            if len(plaintext) != _DATA_KEY_BITS // 8:
+                raise VaultError(
+                    f"Transit returned a {len(plaintext) * 8}-bit data key, "
+                    f"expected {_DATA_KEY_BITS} bits"
+                )
+            return plaintext, str(data["ciphertext"])
         except VaultError:
             raise
+        except InvalidPath as e:
+            logger.error("No Transit engine at mount %s: %s", mount, e)
+            raise VaultError(
+                f"No Transit secrets engine at mount {mount!r} (check transit_mount): {e}"
+            ) from e
         except Exception as e:
             logger.error("Vault data key generation failed for key %s: %s", name, e)
             raise VaultError(f"Failed to generate a data key with Transit: {e}") from e
@@ -662,7 +680,7 @@ class VaultSecretsBackend:
 
     @staticmethod
     def _transit_key_name(key_name: str) -> str:
-        if not isinstance(key_name, str) or not _TRANSIT_KEY_NAME_RE.match(key_name):
+        if not isinstance(key_name, str) or not _TRANSIT_KEY_NAME_RE.fullmatch(key_name):
             raise ValueError(f"invalid Transit key name {key_name!r}")
         return key_name
 
