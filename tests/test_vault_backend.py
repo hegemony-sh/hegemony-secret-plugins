@@ -790,6 +790,61 @@ def test_unwrap_data_key():
     )
 
 
+def test_unwrap_data_key_reports_a_missing_mount():
+    """A transit_mount changed after states were stored must say so, like wrap does."""
+    import pytest
+    from hvac.exceptions import InvalidPath
+
+    from hegemony_secret_vault.vault_client import VaultError
+
+    backend, client = _backend_with_mock_client(transit_mount="trasit")
+    client.secrets.transit.decrypt_data.side_effect = InvalidPath(
+        'no handler for route "trasit/decrypt/hegemony-org-acme"'
+    )
+    with pytest.raises(VaultError, match="No Transit secrets engine at mount 'trasit'"):
+        backend.unwrap_data_key("hegemony-org-acme", "vault:v1:abc")
+
+
+def test_unwrap_data_key_refuses_a_key_of_the_wrong_size():
+    import base64
+
+    import pytest
+
+    from hegemony_secret_vault.vault_client import VaultError
+
+    backend, client = _backend_with_mock_client()
+    client.secrets.transit.decrypt_data.return_value = {
+        "data": {"plaintext": base64.b64encode(b"d" * 16).decode()}
+    }
+    with pytest.raises(VaultError, match="128-bit data key, expected 256 bits"):
+        backend.unwrap_data_key("hegemony-org-acme", "vault:v1:abc")
+
+
+def test_unwrap_data_key_refuses_a_key_that_is_not_base64():
+    import pytest
+
+    from hegemony_secret_vault.vault_client import VaultError
+
+    backend, client = _backend_with_mock_client()
+    # Lenient decoding would drop the "!" and "?" and return 32 bytes of garbage.
+    client.secrets.transit.decrypt_data.return_value = {
+        "data": {"plaintext": "!" + "A" * 43 + "?="}
+    }
+    with pytest.raises(VaultError, match="not valid base64"):
+        backend.unwrap_data_key("hegemony-org-acme", "vault:v1:abc")
+
+
+def test_a_redirected_unwrap_raises():
+    import pytest
+
+    from hegemony_secret_vault.vault_client import VaultError
+
+    backend, client = _backend_with_mock_client()
+    client.secrets.transit.decrypt_data.return_value = _redirect_response()
+    with pytest.raises(VaultError, match="307"):
+        backend.unwrap_data_key("hegemony-org-acme", "vault:v1:abc")
+
+
 def test_transit_key_names_are_validated():
     import pytest
 

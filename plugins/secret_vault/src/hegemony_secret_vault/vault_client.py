@@ -59,6 +59,31 @@ def _normalize_timeout(value: Any) -> int:
     return timeout
 
 
+def _decode_data_key(encoded: Any) -> bytes:
+    """Decode a data key Transit returned, refusing anything but a 256-bit key.
+
+    A malformed or short key would otherwise reach the caller's cipher and fail there
+    with an unrelated error, far from the backend that produced it.
+    """
+    try:
+        key = base64.b64decode(encoded, validate=True)
+    except (TypeError, ValueError) as e:
+        raise VaultError(f"Transit returned a data key that is not valid base64: {e}") from e
+    if len(key) != _DATA_KEY_BITS // 8:
+        raise VaultError(
+            f"Transit returned a {len(key) * 8}-bit data key, expected {_DATA_KEY_BITS} bits"
+        )
+    return key
+
+
+def _missing_transit_mount(mount: str, error: Exception) -> VaultError:
+    """The error for a Transit request answered 404: the mount is missing or misnamed."""
+    logger.error("No Transit engine at mount %s: %s", mount, error)
+    return VaultError(
+        f"No Transit secrets engine at mount {mount!r} (check transit_mount): {error}"
+    )
+
+
 def _reject_redirect(response: Any, operation: str) -> Any:
     """Fail loudly when the server answered a request with a redirect.
 
@@ -635,20 +660,11 @@ class VaultSecretsBackend:
                 )
                 response = _generate()
             data = response["data"]
-            plaintext = base64.b64decode(data["plaintext"], validate=True)
-            if len(plaintext) != _DATA_KEY_BITS // 8:
-                raise VaultError(
-                    f"Transit returned a {len(plaintext) * 8}-bit data key, "
-                    f"expected {_DATA_KEY_BITS} bits"
-                )
-            return plaintext, str(data["ciphertext"])
+            return _decode_data_key(data["plaintext"]), str(data["ciphertext"])
         except VaultError:
             raise
         except InvalidPath as e:
-            logger.error("No Transit engine at mount %s: %s", mount, e)
-            raise VaultError(
-                f"No Transit secrets engine at mount {mount!r} (check transit_mount): {e}"
-            ) from e
+            raise _missing_transit_mount(mount, e) from e
         except Exception as e:
             logger.error("Vault data key generation failed for key %s: %s", name, e)
             raise VaultError(f"Failed to generate a data key with Transit: {e}") from e
@@ -658,22 +674,28 @@ class VaultSecretsBackend:
 
         Raises:
             ValueError: ``key_name`` is not a valid Transit key name.
-            VaultError: The request failed (wrong key, missing policy, ...).
+            VaultError: The request failed (missing mount, wrong key, missing policy, ...)
+                or did not return a 256-bit key.
         """
+        from hvac.exceptions import InvalidPath
+
         name = self._transit_key_name(key_name)
         self._ensure_authenticated()
+        mount = self._config.transit_mount
         try:
             response = _reject_redirect(
                 self._client.secrets.transit.decrypt_data(
                     name=name,
                     ciphertext=wrapped_key,
-                    mount_point=self._config.transit_mount,
+                    mount_point=mount,
                 ),
                 "data key unwrap",
             )
-            return base64.b64decode(response["data"]["plaintext"])
+            return _decode_data_key(response["data"]["plaintext"])
         except VaultError:
             raise
+        except InvalidPath as e:
+            raise _missing_transit_mount(mount, e) from e
         except Exception as e:
             logger.error("Vault data key unwrap failed for key %s: %s", name, e)
             raise VaultError(f"Failed to unwrap a data key with Transit: {e}") from e
