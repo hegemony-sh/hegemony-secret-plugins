@@ -163,7 +163,7 @@ admin names it in `HEGEMONY_TF_STATE_KEY_BACKEND`.
 For such a backend:
 
 - Enable Transit at `transit_mount` (`bao secrets enable transit` or
-  `vault secrets enable transit`). Without it, wrapping fails with
+  `vault secrets enable transit`). Without it, wrapping and unwrapping fail with
   "No Transit secrets engine at mount ...".
 - Each Hegemony organization gets its own key, `hegemony-org-<org id>-tf-state`
   (`aes256-gcm96`), created on first use. The backend's credentials need:
