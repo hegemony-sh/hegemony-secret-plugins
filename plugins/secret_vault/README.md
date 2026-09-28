@@ -169,12 +169,10 @@ For such a backend:
   (`aes256-gcm96`), created on first use. The backend's credentials need:
 
   ```hcl
-  path "transit/keys/hegemony-org-*" {
+  # The key itself only ("+" is one path segment): creating it is a write
+  # and needs "update", and nothing below it (config, rotate, trim) matches.
+  path "transit/keys/+" {
     capabilities = ["create", "update", "read"]
-  }
-  # Nothing below a key: no config (deletion, export), rotation or trimming.
-  path "transit/keys/hegemony-org-*/*" {
-    capabilities = ["deny"]
   }
   path "transit/datakey/plaintext/hegemony-org-*" {
     capabilities = ["update"]
@@ -184,9 +182,16 @@ For such a backend:
   }
   ```
 
-  Replace `transit` with your `transit_mount`. To keep key creation out of the
-  running platform, create the keys yourself and drop `create` and `update`
-  from the first rule.
+  Replace `transit` with your `transit_mount`. Do not write the first rule as
+  `transit/keys/hegemony-org-*`: `*` is a prefix glob, and only at the end of a
+  path, so it would also allow `update` on every key's `config` (which can
+  allow deletion), `rotate` and `trim` (which destroys old key versions, and
+  with them the states they wrapped), and no deny rule can take that back. The
+  `+` rule lets the backend create keys of other names on the mount too; a
+  create leaves an existing key's settings alone, and the other two rules
+  still limit use to the `hegemony-org-*` keys, so give Hegemony a mount of its
+  own if that matters. To keep key creation out of the running platform, create
+  the keys yourself and drop `create` and `update` from the first rule.
 - Do not change `transit_mount` once states are stored, and never delete these
   keys: stored versions name the backend and the key, not the mount, and a
   version whose key is gone cannot be decrypted. Back up the Transit keys with
