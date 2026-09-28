@@ -79,3 +79,30 @@ def test_sdk_imports_nothing_heavy():
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_data_key_wrapping_backend_is_optional_extension():
+    assert hasattr(sdk, "DataKeyWrappingSecretBackend")
+
+    class _PlainBackend:
+        def read(self, path):
+            return None
+
+        def write(self, path, data):
+            return None
+
+        def delete(self, path):
+            return None
+
+        def test(self):
+            return None
+
+    class _WrappingBackend(_PlainBackend):
+        def wrap_data_key(self, key_name):
+            return b"k" * 32, "wrapped"
+
+        def unwrap_data_key(self, key_name, wrapped_key):
+            return b"k" * 32
+
+    assert not isinstance(_PlainBackend(), sdk.DataKeyWrappingSecretBackend)
+    assert isinstance(_WrappingBackend(), sdk.DataKeyWrappingSecretBackend)

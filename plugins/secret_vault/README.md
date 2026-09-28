@@ -88,6 +88,7 @@ unusable.
 | `ca_cert_file` | no | — | Optional path to a CA certificate bundle for TLS verification |
 | `verify_ssl` | no | `true` | Verify the TLS certificate |
 | `allow_insecure_http` | no | `false` | Accept an `http://` address — see [Transport security](#transport-security) |
+| `transit_mount` | no | `transit` | Transit secrets engine mount for [data-key wrapping](#data-key-wrapping-transit). Only used by that feature |
 
 Exactly one auth method must resolve: a static `token`, or an AppRole pair
 (`role_id`/`role_id_file` plus `secret_id`/`secret_id_file`). Registering the
@@ -149,6 +150,47 @@ AppRole (production):
   "secret_id": "{{ env('VAULT_SECRET_ID') }}"
 }
 ```
+
+### Data-key wrapping (Transit)
+
+The backend also implements the SDK's optional `DataKeyWrappingSecretBackend`
+protocol with the Transit secrets engine. Hegemony uses it to encrypt the
+Terraform/OpenTofu state it stores: each stored version gets a fresh 256-bit
+data key, and only that key's wrapped form is kept next to it. Hegemony wraps
+keys with the internal OpenBao on its own; it uses another backend only when an
+admin names it in `HEGEMONY_TF_STATE_KEY_BACKEND`.
+
+For such a backend:
+
+- Enable Transit at `transit_mount` (`bao secrets enable transit` or
+  `vault secrets enable transit`). Without it, wrapping fails with
+  "No Transit secrets engine at mount ...".
+- Each Hegemony organization gets its own key, `hegemony-org-<org id>-tf-state`
+  (`aes256-gcm96`), created on first use. The backend's credentials need:
+
+  ```hcl
+  path "transit/keys/hegemony-org-*" {
+    capabilities = ["create", "update", "read"]
+  }
+  # Nothing below a key: no config (deletion, export), rotation or trimming.
+  path "transit/keys/hegemony-org-*/*" {
+    capabilities = ["deny"]
+  }
+  path "transit/datakey/plaintext/hegemony-org-*" {
+    capabilities = ["update"]
+  }
+  path "transit/decrypt/hegemony-org-*" {
+    capabilities = ["update"]
+  }
+  ```
+
+  Replace `transit` with your `transit_mount`. To keep key creation out of the
+  running platform, create the keys yourself and drop `create` and `update`
+  from the first rule.
+- Do not change `transit_mount` once states are stored, and never delete these
+  keys: stored versions name the backend and the key, not the mount, and a
+  version whose key is gone cannot be decrypted. Back up the Transit keys with
+  the database.
 
 ## Usage
 

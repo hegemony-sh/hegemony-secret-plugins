@@ -672,3 +672,132 @@ def test_a_non_redirect_response_passes_through_untouched():
         "data": {"data": {"password": "hunter2"}}
     }
     assert backend.read("a/b") == {"password": "hunter2"}
+
+
+# -- Transit data-key wrapping (DataKeyWrappingSecretBackend) --
+
+
+def test_vault_backend_satisfies_the_data_key_wrapping_protocol():
+    from hegemony_secret_sdk import DataKeyWrappingSecretBackend
+
+    backend, _client = _backend_with_mock_client()
+    assert isinstance(backend, DataKeyWrappingSecretBackend)
+
+
+def test_wrap_data_key_returns_plaintext_and_ciphertext():
+    import base64
+
+    backend, client = _backend_with_mock_client(transit_mount="kms")
+    client.secrets.transit.generate_data_key.return_value = {
+        "data": {"plaintext": base64.b64encode(b"k" * 32).decode(), "ciphertext": "vault:v1:abc"}
+    }
+
+    plaintext, wrapped = backend.wrap_data_key("hegemony-org-acme")
+
+    assert plaintext == b"k" * 32
+    assert wrapped == "vault:v1:abc"
+    client.secrets.transit.generate_data_key.assert_called_once_with(
+        name="hegemony-org-acme", key_type="plaintext", bits=256, mount_point="kms"
+    )
+    client.secrets.transit.create_key.assert_not_called()
+
+
+def test_wrap_data_key_creates_a_missing_transit_key():
+    import base64
+
+    from hvac.exceptions import InvalidRequest
+
+    backend, client = _backend_with_mock_client()
+    client.secrets.transit.generate_data_key.side_effect = [
+        InvalidRequest("encryption key not found"),
+        {"data": {"plaintext": base64.b64encode(b"x" * 32).decode(), "ciphertext": "vault:v1:x"}},
+    ]
+
+    plaintext, _ = backend.wrap_data_key("hegemony-org-acme")
+
+    assert plaintext == b"x" * 32
+    client.secrets.transit.create_key.assert_called_once_with(
+        name="hegemony-org-acme", key_type="aes256-gcm96", mount_point="transit"
+    )
+    assert client.secrets.transit.generate_data_key.call_count == 2
+
+
+def test_wrap_data_key_reports_a_missing_mount_without_creating_a_key():
+    """A missing or misnamed mount is a 404, not a missing key: nothing is created."""
+    import pytest
+    from hvac.exceptions import InvalidPath
+
+    from hegemony_secret_vault.vault_client import VaultError
+
+    backend, client = _backend_with_mock_client(transit_mount="trasit")
+    client.secrets.transit.generate_data_key.side_effect = InvalidPath(
+        'no handler for route "trasit/datakey/plaintext/hegemony-org-acme"'
+    )
+    with pytest.raises(VaultError, match="No Transit secrets engine at mount 'trasit'"):
+        backend.wrap_data_key("hegemony-org-acme")
+    client.secrets.transit.create_key.assert_not_called()
+
+
+def test_wrap_data_key_refuses_a_key_of_the_wrong_size():
+    import base64
+
+    import pytest
+
+    from hegemony_secret_vault.vault_client import VaultError
+
+    backend, client = _backend_with_mock_client()
+    client.secrets.transit.generate_data_key.return_value = {
+        "data": {"plaintext": base64.b64encode(b"k" * 16).decode(), "ciphertext": "vault:v1:abc"}
+    }
+    with pytest.raises(VaultError, match="128-bit data key, expected 256 bits"):
+        backend.wrap_data_key("hegemony-org-acme")
+
+
+def test_transit_mount_is_normalized():
+    for configured, expected in (
+        (" transit/ ", "transit"),
+        ("/kms/\n", "kms"),
+        ("", "transit"),
+        (None, "transit"),
+    ):
+        backend, _client = _backend_with_mock_client(transit_mount=configured)
+        assert backend._config.transit_mount == expected, configured
+
+
+def test_wrap_data_key_surfaces_other_errors():
+    import pytest
+    from hvac.exceptions import Forbidden
+
+    from hegemony_secret_vault.vault_client import VaultError
+
+    backend, client = _backend_with_mock_client()
+    client.secrets.transit.generate_data_key.side_effect = Forbidden("permission denied")
+    with pytest.raises(VaultError, match="permission denied"):
+        backend.wrap_data_key("hegemony-org-acme")
+    client.secrets.transit.create_key.assert_not_called()
+
+
+def test_unwrap_data_key():
+    import base64
+
+    backend, client = _backend_with_mock_client()
+    client.secrets.transit.decrypt_data.return_value = {
+        "data": {"plaintext": base64.b64encode(b"d" * 32).decode()}
+    }
+    assert backend.unwrap_data_key("hegemony-org-acme", "vault:v1:abc") == b"d" * 32
+    client.secrets.transit.decrypt_data.assert_called_once_with(
+        name="hegemony-org-acme", ciphertext="vault:v1:abc", mount_point="transit"
+    )
+
+
+def test_transit_key_names_are_validated():
+    import pytest
+
+    backend, _client = _backend_with_mock_client()
+    for bad in ("", "a/b", "../x", "x" * 129, "ok\n", "-x", "x-", "a.b"):
+        with pytest.raises(ValueError, match="invalid Transit key name"):
+            backend.wrap_data_key(bad)
+        with pytest.raises(ValueError, match="invalid Transit key name"):
+            backend.unwrap_data_key(bad, "vault:v1:abc")
+    for good in ("x", "hegemony-org-00000000-0000-0000-0000-000000000001-tf-state", "x" * 128):
+        assert backend._transit_key_name(good) == good
