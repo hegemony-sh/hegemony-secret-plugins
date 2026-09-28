@@ -1,3 +1,9 @@
+## [0.3.1](https://github.com/hegemony-sh/hegemony-secret-plugins/compare/v0.3.0...v0.3.1) (2026-09-28)
+
+### Bug Fixes
+
+* **vault:** check unwrapped data keys and name a missing Transit mount ([39a10fe](https://github.com/hegemony-sh/hegemony-secret-plugins/commit/39a10fec8d62e3833ac65eb0e4a37f7f782fb6ff))
+
 ## [0.3.0](https://github.com/hegemony-sh/hegemony-secret-plugins/compare/v0.2.0...v0.3.0) (2026-09-28)
 
 ### Features
