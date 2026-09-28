@@ -171,8 +171,9 @@ For such a backend:
   ```hcl
   # The key itself only ("+" is one path segment): creating it is a write
   # and needs "update", and nothing below it (config, rotate, trim) matches.
+  # The backend never reads a key, so "read" (key metadata) is not granted.
   path "transit/keys/+" {
-    capabilities = ["create", "update", "read"]
+    capabilities = ["create", "update"]
   }
   path "transit/datakey/plaintext/hegemony-org-*" {
     capabilities = ["update"]
@@ -191,7 +192,7 @@ For such a backend:
   create leaves an existing key's settings alone, and the other two rules
   still limit use to the `hegemony-org-*` keys, so give Hegemony a mount of its
   own if that matters. To keep key creation out of the running platform, create
-  the keys yourself and drop `create` and `update` from the first rule.
+  the keys yourself and drop the first rule.
 - Do not change `transit_mount` once states are stored, and never delete these
   keys: stored versions name the backend and the key, not the mount, and a
   version whose key is gone cannot be decrypted. Back up the Transit keys with
