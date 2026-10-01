@@ -21,10 +21,9 @@ context into them; a registered factory receives only an already-resolved config
 dict and returns a backend instance directly. See the
 [SDK README](packages/secret_sdk/README.md).
 
-Public source is licensed under `AGPL-3.0-or-later`; commercial licenses may be
-available separately. See [Licensing](LICENSING.md).
+Licensed under `AGPL-3.0-or-later`. See [Licensing](LICENSING.md).
 
-Contributions require the [Hegemony Contributor License Agreement](CLA.md). See
+Every commit needs a DCO sign-off (`git commit -s`). See
 [Contributing](CONTRIBUTING.md).
 
 ## What is auto-installed vs opt-in
