@@ -5,14 +5,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # hegemony-secret-plugins
 
-Standalone release repo for Hegemony secret backend plugin packages:
+[![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue.svg)](LICENSE)
+[![CI](https://github.com/hegemony-sh/hegemony-secret-plugins/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/hegemony-sh/hegemony-secret-plugins/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/hegemony-sh/hegemony-secret-plugins?label=Release)](https://github.com/hegemony-sh/hegemony-secret-plugins/releases)
 
-- `hegemony-secret-sdk`
-- `hegemony-secret-vault`
-- `hegemony-secret-1password`
+Secret-backend SDK and plugin wheels for [Hegemony](https://github.com/hegemony-sh/hegemony),
+a self-hosted orchestration platform for long-running infrastructure changes.
+Hegemony flows carry secret *references*, such as `{{ secret('vault://orgs/default/secrets/db/password') }}`,
+never values; a secret backend is what resolves a reference at run time.
+
+| Package | What it is |
+| --- | --- |
+| [`hegemony-secret-sdk`](packages/secret_sdk/README.md) | The public SDK a backend is written against: the `SecretBackend` protocol, the registry and the entry-point group. Depends only on `pydantic`. |
+| [`hegemony-secret-vault`](plugins/secret_vault/README.md) | HashiCorp Vault and OpenBao KV v2 backends (`vault`, the hidden legacy alias `vault_kv2`, and `openbao`), plus optional Transit data-key wrapping. |
+| [`hegemony-secret-1password`](plugins/secret_1password/README.md) | 1Password backends: `onepassword_connect` (Connect server) and `onepassword_service_account`. |
 
 The SDK and all plugin wheels are released together under one semver tag such as
-`v0.1.0`, cut automatically when a releasable change merges to `main`. Plugin wheels depend on the exact SDK version from the same release.
+`v0.3.1`, cut automatically when a releasable change merges to `main`. Plugin wheels depend on the exact SDK version from the same release.
 
 A plugin depends only on `hegemony-secret-sdk` (which depends only on `pydantic`) and
 exposes a `register(registry)` callable under the `hegemony.secret_backends`
@@ -21,10 +30,24 @@ context into them; a registered factory receives only an already-resolved config
 dict and returns a backend instance directly. See the
 [SDK README](packages/secret_sdk/README.md).
 
-Licensed under `AGPL-3.0-or-later`. See [Licensing](LICENSING.md).
+## How this relates to Hegemony
 
-Every commit needs a DCO sign-off (`git commit -s`). See
-[Contributing](CONTRIBUTING.md).
+The platform, [`hegemony-sh/hegemony`](https://github.com/hegemony-sh/hegemony),
+owns the secret references, the Settings → Secret Backends screens and the
+registry that loads plugins. This repository owns the backends and the SDK they
+register through, so a backend can be released, and installed, without a
+platform release.
+
+- The platform pins this repository by release tag and commit in its
+  `.github/plugin-pins.json`, and builds `hegemony-secret-sdk` and
+  `hegemony-secret-vault` into its API and worker images from a checkout at
+  that tag.
+- Version numbers here are independent of the platform's. These packages have
+  their own 0.x line, so a platform release does not imply a release here.
+- The other plugin kinds live in sibling repositories:
+  [`hegemony-step-plugins`](https://github.com/hegemony-sh/hegemony-step-plugins),
+  [`hegemony-inventory-plugins`](https://github.com/hegemony-sh/hegemony-inventory-plugins) and
+  [`hegemony-notification-plugins`](https://github.com/hegemony-sh/hegemony-notification-plugins).
 
 ## What is auto-installed vs opt-in
 
@@ -52,7 +75,7 @@ It is installed *with* dependencies so its 1Password SDKs (`onepasswordconnectsd
 `onepassword-sdk`) are pulled in.
 
 ```bash
-VERSION=0.1.0
+VERSION=<release version without the v, for example 0.3.1>
 API_CONTAINER=<your API container name>
 WORKER_CONTAINER=<your worker container name>
 
@@ -88,13 +111,15 @@ gh attestation verify hegemony_secret_1password-${VERSION}-py3-none-any.whl \
 Attestations are bound to the repository path at publish time: wheels from
 releases published before the move to the `hegemony-sh` organization are bound
 to the path this repository carried then, so verifying one means passing that
-path to `--repo` instead. Releases cut while this repository is private carry
-no attestation at all — the feature needs a public repository or an Enterprise
-plan — so `gh attestation verify` has nothing to check on them until the
-repository is public. `SHA256SUMS` still ships beside those assets, but it
+path to `--repo` instead. The release workflow creates attestations only while
+the repository is public (the feature needs a public repository or an
+Enterprise plan), and creates them when it publishes. A release published while
+the repository was private therefore has none, and making the repository public
+afterwards does not add one: `gh attestation verify` has nothing to check on it.
+`SHA256SUMS` still ships beside every release's assets, but it
 checks integrity against a manifest published in the same release rather than
-provenance, so treat it as a consistency check and not as a stand-in for
-attestation.
+provenance, so where there is no attestation treat it as a consistency check and
+not as a stand-in for one.
 
 Or build local wheels from this repository and copy them into the running dev containers:
 
@@ -116,6 +141,30 @@ done
 These Docker-command installs are runtime changes. Re-run them after recreating a container
 or replacing the image.
 
+## Build a secret backend
+
+A backend does not have to live in this repository: any wheel that depends on
+`hegemony-secret-sdk` and registers a `register(registry)` callable under the
+`hegemony.secret_backends` entry-point group is discovered by the platform
+(install it into the API and the worker, as above, and restart both). The
+[SDK README](packages/secret_sdk/README.md) has the entry-point declaration, a
+complete minimal backend (`read`, `write`, `test`), and the config-schema keys
+the host form understands. The two plugins here are worked examples:
+[Vault and OpenBao](plugins/secret_vault/README.md) for a backend with several
+auth methods, and [1Password](plugins/secret_1password/README.md) for one that
+wraps an SDK.
+
+## Documentation
+
+- [Hegemony documentation](https://hegemony.sh): the documentation site.
+- [Secrets](https://github.com/hegemony-sh/hegemony/blob/HEAD/docs/features/secrets.md):
+  secret references, backends and how they are configured in the platform.
+- [Internal OpenBao lifecycle](https://github.com/hegemony-sh/hegemony/blob/HEAD/docs/features/openbao-internal.md):
+  the bundled OpenBao backend.
+- [Installed plugins](https://github.com/hegemony-sh/hegemony/blob/HEAD/docs/guides/plugins.md):
+  where the platform lists what is installed.
+- Per-package configuration reference: the package READMEs linked above.
+
 ## Development
 
 ```bash
@@ -131,12 +180,15 @@ task lint
 task test
 task build
 task smoke
+task md:lint
 ```
 
 The hook set mirrors Hegemony where applicable for this package-only repo: general file
 hygiene, pyproject validation, typos, Zizmor, workflow schema checks, REUSE, Ruff,
 typecheck, tests, Gitleaks, and commitlint. UI, Docker, OpenAPI, and task-runner hooks stay
-in Hegemony because those surfaces are not present here.
+in Hegemony because those surfaces are not present here. Gitleaks reads
+[`.gitleaks.toml`](.gitleaks.toml), which extends the default ruleset and lists
+the one file it allowlists, with the reason.
 
 Run the local equivalent of CI:
 
@@ -154,3 +206,13 @@ Releases are cut automatically when a releasable change merges to `main`; see
 [Contributing](CONTRIBUTING.md#releasing). Do not bump versions or push tags by
 hand. `task version:set -- X.Y.Z` and `task version:verify -- vX.Y.Z` stay
 available for trying the lockstep bump locally.
+
+## Contributing, security and licence
+
+- Read [Contributing](CONTRIBUTING.md) first. Every commit needs a DCO sign-off
+  (`git commit -s`) and follows Conventional Commits, because a merge to `main`
+  is a release.
+- Report vulnerabilities privately, as [SECURITY.md](SECURITY.md) describes, and
+  do not open public issues for them.
+- Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+- Licensed under `AGPL-3.0-or-later`. See [Licensing](LICENSING.md).

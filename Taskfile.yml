@@ -61,6 +61,13 @@ tasks:
     cmds:
       - uv run reuse lint
 
+  md:lint:
+    desc: Lint Markdown (markdownlint-cli2)
+    cmds:
+      - >-
+        npx --yes --package markdownlint-cli2@0.20.0 --package katex@0.16.38
+        markdownlint-cli2 "**/*.md"
+
   lint:
     desc: Run Python lint, formatting, typecheck, and REUSE checks
     cmds:
