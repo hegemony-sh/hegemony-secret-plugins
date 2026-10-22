@@ -45,9 +45,11 @@ repos:
         name: "Security: GitHub Actions policy scan (Zizmor)"
         args: ["--config", ".github/zizmor.yml"]
 
-  # GitHub Actions workflow syntax validator
+  # GitHub Actions workflow syntax validator. 0.36.0's bundled schema does not
+  # know the `artifact-metadata` permission release.yml grants, so the hook
+  # failed on that file; 0.37.0 added it.
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.36.0
+    rev: 0.38.2
     hooks:
       - id: check-github-workflows
         name: "CI: GitHub workflow schema validation"
