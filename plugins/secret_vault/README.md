@@ -50,10 +50,12 @@ list/validate the backend type and resolve secrets) and the **worker** (to
 resolve secrets at run time) need the wheel installed into `/opt/venv`; restart
 both after installing so each registry reloads its entry points.
 
-For local development against this repository:
+The wheels are published on this repository's GitHub Releases, not on PyPI, so
+`uv pip install hegemony-secret-vault` finds nothing to install. For local development, work
+from a checkout of this repository, where the package is a workspace member:
 
 ```bash
-uv pip install hegemony-secret-vault
+uv sync --all-packages
 ```
 
 ## Configure
