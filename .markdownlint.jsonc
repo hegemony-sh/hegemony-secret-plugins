@@ -1,0 +1,21 @@
+/*
+ * SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+// The same rules as the Hegemony platform repository.
+{
+  // Line length - disabled for tables and code blocks
+  "MD013": false,
+  // HTML in markdown - allowed for badges and special formatting
+  "MD033": false,
+  // Duplicate headings in sibling sections - common in changelogs
+  "MD024": { "siblings_only": true },
+  // Bare URLs - allowed for simplicity
+  "MD034": false,
+  // Table style - use compact
+  "MD060": false,
+  // First-line heading - not required for instruction files
+  "MD041": false,
+}

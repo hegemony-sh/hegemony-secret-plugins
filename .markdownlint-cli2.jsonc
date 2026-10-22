@@ -1,0 +1,27 @@
+/*
+ * SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+{
+  // Configuration for markdownlint-cli2
+  // See: https://github.com/DavidAnson/markdownlint-cli2
+
+  // Ignore patterns - exclude dependencies, caches, build output, and the
+  // changelog that semantic-release generates on every release
+  "ignores": [
+    "**/node_modules/**",
+    "**/.venv/**",
+    "**/.pytest_cache/**",
+    "**/dist/**",
+    "**/build/**",
+    "CHANGELOG.md",
+  ],
+
+  // Extend base markdownlint config
+  "config": {
+    // Extend from .markdownlint.jsonc in the same directory
+    "extends": ".markdownlint.jsonc",
+  },
+}
