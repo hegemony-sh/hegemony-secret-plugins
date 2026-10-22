@@ -26,6 +26,14 @@ env:
 # workflow back if the self-hosted host is down. The release workflow is not
 # included on purpose: it writes the release token into its workspace, which
 # must not outlive the job on a non-ephemeral runner.
+#
+# The repository is public and this workflow runs on `pull_request`, so a fork's
+# pull request can start it. CI_RUNNER must stay unset, or fork pull requests
+# must require approval (Settings > Actions > General > Fork pull request
+# workflows: all outside collaborators): otherwise a fork's workflow runs on the
+# self-hosted host, which executes whatever the pull request asks of it. Nothing
+# here needs that host: the jobs need only Python and uv, which GitHub-hosted
+# runners provide.
 jobs:
   commit-lint:
     name: Lint Commit Messages
