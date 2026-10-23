@@ -1,3 +1,9 @@
+## [0.3.4](https://github.com/hegemony-sh/hegemony-secret-plugins/compare/v0.3.3...v0.3.4) (2026-10-23)
+
+### Bug Fixes
+
+* **release:** stop release comments from failing a published release ([232ddf1](https://github.com/hegemony-sh/hegemony-secret-plugins/commit/232ddf1343e9819a47b7a9f268de321ca83d17e7))
+
 ## [0.3.3](https://github.com/hegemony-sh/hegemony-secret-plugins/compare/v0.3.2...v0.3.3) (2026-10-23)
 
 ### Bug Fixes
