@@ -60,4 +60,3 @@ class SecretBackendRegistry(Protocol):
         with hidden-type support; on an older host the keyword raises ``TypeError`` and
         the plugin fails to load.
         """
-        ...

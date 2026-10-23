@@ -24,19 +24,15 @@ class SecretBackend(Protocol):
 
     def read(self, path: str) -> Mapping[str, Any] | None:
         """Read the secret stored at ``path``; return ``None`` if it does not exist."""
-        ...
 
     def write(self, path: str, data: Mapping[str, Any]) -> None:
         """Write ``data`` to the secret stored at ``path``."""
-        ...
 
     def delete(self, path: str) -> None:
         """Delete the secret stored at ``path``; deleting a missing secret is not an error."""
-        ...
 
     def test(self) -> None:
         """Verify connectivity/authentication against the backend; raise on failure."""
-        ...
 
 
 @runtime_checkable
@@ -54,7 +50,6 @@ class ListableSecretBackend(SecretBackend, Protocol):
         Container entries (which can be listed further) end with ``"/"``; leaf entries
         (readable secret paths) do not. An unknown or empty ``path`` returns ``[]``.
         """
-        ...
 
 
 @runtime_checkable
@@ -77,8 +72,6 @@ class DataKeyWrappingSecretBackend(SecretBackend, Protocol):
         Returns ``(plaintext_key, wrapped_key)``: the host encrypts with the plaintext
         and stores only the wrapped form. A missing wrapping key is created.
         """
-        ...
 
     def unwrap_data_key(self, key_name: str, wrapped_key: str) -> bytes:
         """Return the plaintext of a data key :meth:`wrap_data_key` issued."""
-        ...
