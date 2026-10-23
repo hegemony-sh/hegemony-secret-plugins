@@ -9,6 +9,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 [![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![CI](https://github.com/hegemony-sh/hegemony-secret-plugins/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/hegemony-sh/hegemony-secret-plugins/actions/workflows/ci.yml)
 [![Latest release](https://img.shields.io/github/v/release/hegemony-sh/hegemony-secret-plugins?label=Release)](https://github.com/hegemony-sh/hegemony-secret-plugins/releases)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fhegemony-sh%2Fhegemony-secret-plugins.svg?type=shield&issueType=license)](https://app.fossa.com/projects/git%2Bgithub.com%2Fhegemony-sh%2Fhegemony-secret-plugins?ref=badge_shield&issueType=license)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fhegemony-sh%2Fhegemony-secret-plugins.svg?type=shield&issueType=security)](https://app.fossa.com/projects/git%2Bgithub.com%2Fhegemony-sh%2Fhegemony-secret-plugins?ref=badge_shield&issueType=security)
+
+
 
 Secret-backend SDK and plugin wheels for [Hegemony](https://github.com/hegemony-sh/hegemony),
 a self-hosted orchestration platform for long-running infrastructure changes.
@@ -225,3 +229,6 @@ available for trying the lockstep bump locally.
   do not open public issues for them.
 - Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 - Licensed under `AGPL-3.0-or-later`. See [Licensing](LICENSING.md).
+
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fhegemony-sh%2Fhegemony-secret-plugins.svg?type=large&issueType=license)](https://app.fossa.com/projects/git%2Bgithub.com%2Fhegemony-sh%2Fhegemony-secret-plugins?ref=badge_large&issueType=license)
