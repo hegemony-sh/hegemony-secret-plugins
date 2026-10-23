@@ -5,13 +5,13 @@
 
 [project]
 name = "hegemony-secret-vault"
-version = "0.3.2"
+version = "0.3.3"
 description = "HashiCorp Vault and OpenBao secret backend plugin for Hegemony"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE-*.txt"]
 requires-python = ">=3.11"
 dependencies = [
-    "hegemony-secret-sdk==0.3.2",
+    "hegemony-secret-sdk==0.3.3",
     "hvac>=2.3.0,<3.0",
 ]
 

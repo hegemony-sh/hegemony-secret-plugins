@@ -1,3 +1,9 @@
+## [0.3.3](https://github.com/hegemony-sh/hegemony-secret-plugins/compare/v0.3.2...v0.3.3) (2026-10-23)
+
+### Bug Fixes
+
+* **packaging:** ship the AGPL-3.0 text in every wheel ([0ade4e5](https://github.com/hegemony-sh/hegemony-secret-plugins/commit/0ade4e58c7970229a351f052cc6d3ddf7e0f11ef))
+
 ## [0.3.2](https://github.com/hegemony-sh/hegemony-secret-plugins/compare/v0.3.1...v0.3.2) (2026-10-23)
 
 ### Bug Fixes
