@@ -1,3 +1,9 @@
+## [0.3.2](https://github.com/hegemony-sh/hegemony-secret-plugins/compare/v0.3.1...v0.3.2) (2026-10-23)
+
+### Bug Fixes
+
+* **deps:** upgrade virtualenv to 21.14.13 for CVE-2026-113713 ([33f7641](https://github.com/hegemony-sh/hegemony-secret-plugins/commit/33f764111b98d42d5efc0c662343a55a69fec008))
+
 ## [0.3.1](https://github.com/hegemony-sh/hegemony-secret-plugins/compare/v0.3.0...v0.3.1) (2026-09-28)
 
 ### Bug Fixes
