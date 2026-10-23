@@ -69,13 +69,19 @@ tasks:
         npx --yes --package markdownlint-cli2@0.20.0 --package katex@0.16.38
         markdownlint-cli2 "**/*.md"
 
+  licenses:packages:
+    desc: Verify every wheel carries copies of the licence texts its SPDX expression names
+    cmds:
+      - python3 scripts/package_licenses.py --check
+
   lint:
-    desc: Run Python lint, formatting, typecheck, and REUSE checks
+    desc: Run Python lint, formatting, typecheck, REUSE and licence checks
     cmds:
       - task: ruff
       - task: fmt:check
       - task: ty
       - task: reuse:lint
+      - task: licenses:packages
 
   build:
     desc: Build all workspace wheels into dist/
