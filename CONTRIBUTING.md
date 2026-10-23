@@ -29,6 +29,10 @@ leaked secrets, exploit details, or suspected compromise.
 
 ## Licensing and DCO
 
+The [Code of Conduct](CODE_OF_CONDUCT.md) is adapted third-party documentation
+under CC-BY-4.0; preserve its attribution and license when editing it. The
+source-code licensing and contribution rules below continue to apply to code.
+
 Every commit must be signed off under the
 [Developer Certificate of Origin](https://developercertificate.org/) (DCO),
 version 1.1. A `Signed-off-by:` line certifies that you wrote the change, or
