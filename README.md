@@ -236,8 +236,9 @@ available for trying the lockstep bump locally.
 ## Contributing, security and licence
 
 - Read [Contributing](CONTRIBUTING.md) first. Every commit needs a DCO sign-off
-  (`git commit -s`) and follows Conventional Commits, because a merge to `main`
-  is a release.
+  (`git commit -s`) and follows Conventional Commits, because merges to `main`
+  drive releases: `feat`, `fix`, `perf` and `revert` commits publish a new
+  version.
 - Report vulnerabilities privately, as [SECURITY.md](SECURITY.md) describes, and
   do not open public issues for them.
 - Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
