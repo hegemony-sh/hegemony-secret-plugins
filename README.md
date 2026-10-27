@@ -243,4 +243,4 @@ available for trying the lockstep bump locally.
 - Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 - Licensed under `AGPL-3.0-or-later`. See [Licensing](LICENSING.md).
 
-[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fhegemony-sh%2Fhegemony-secret-plugins.svg?type=large&issueType=license)](https://app.fossa.com/projects/git%2Bgithub.com%2Fhegemony-sh%2Fhegemony-secret-plugins?ref=badge_large&issueType=license)
+[![FOSSA license report](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fhegemony-sh%2Fhegemony-secret-plugins.svg?type=large&issueType=license)](https://app.fossa.com/projects/git%2Bgithub.com%2Fhegemony-sh%2Fhegemony-secret-plugins?ref=badge_large&issueType=license)
