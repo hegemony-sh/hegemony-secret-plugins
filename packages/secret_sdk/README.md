@@ -16,12 +16,13 @@ exposes a `register(registry)` callable under the
 `hegemony.secret_backends` entry-point group:
 
 ```toml
-# In your plugin's pyproject.toml
+# In your plugin's pyproject.toml. The SDK is 0.x, where a breaking change
+# releases a new minor version, so depend on one minor at a time.
+[project]
+dependencies = ["hegemony-secret-sdk>=0.3,<0.4"]
+
 [project.entry-points."hegemony.secret_backends"]
 my_plugin = "my_plugin:register"
-
-[project.dependencies]
-hegemony-secret-sdk = ">=0.1,<0.2"
 ```
 
 ## Backends are leaf components

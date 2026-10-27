@@ -14,8 +14,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 [![FOSSA security scan](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fhegemony-sh%2Fhegemony-secret-plugins.svg?type=shield&issueType=security)](https://app.fossa.com/projects/git%2Bgithub.com%2Fhegemony-sh%2Fhegemony-secret-plugins?ref=badge_shield&issueType=security)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/hegemony-sh/hegemony-secret-plugins/badge)](https://scorecard.dev/viewer/?uri=github.com/hegemony-sh/hegemony-secret-plugins)
 
-
-
 Secret-backend SDK and plugin wheels for [Hegemony](https://github.com/hegemony-sh/hegemony),
 a self-hosted orchestration platform for long-running infrastructure changes.
 Hegemony flows carry secret *references*, such as `{{ secret('vault://orgs/default/secrets/db/password') }}`,
@@ -27,8 +25,8 @@ never values; a secret backend is what resolves a reference at run time.
 | [`hegemony-secret-vault`](plugins/secret_vault/README.md) | HashiCorp Vault and OpenBao KV v2 backends (`vault`, the hidden legacy alias `vault_kv2`, and `openbao`), plus optional Transit data-key wrapping. |
 | [`hegemony-secret-1password`](plugins/secret_1password/README.md) | 1Password backends: `onepassword_connect` (Connect server) and `onepassword_service_account`. |
 
-The SDK and all plugin wheels are released together under one semver tag such as
-`v0.3.1`, cut automatically when a releasable change merges to `main`. Plugin wheels depend on the exact SDK version from the same release.
+The SDK and all plugin wheels are released together under one semver tag,
+`vX.Y.Z`, cut automatically when a releasable change merges to `main`. Plugin wheels depend on the exact SDK version from the same release.
 
 A plugin depends only on `hegemony-secret-sdk` (which depends only on `pydantic`) and
 exposes a `register(registry)` callable under the `hegemony.secret_backends`
@@ -82,7 +80,7 @@ It is installed *with* dependencies so its 1Password SDKs (`onepasswordconnectsd
 `onepassword-sdk`) are pulled in.
 
 ```bash
-VERSION=<release version without the v, for example 0.3.1>
+VERSION=X.Y.Z   # a release tag without the leading v; see Compatibility
 API_CONTAINER=<your API container name>
 WORKER_CONTAINER=<your worker container name>
 
@@ -155,6 +153,19 @@ done
 
 These Docker-command installs are runtime changes. Re-run them after recreating a container
 or replacing the image.
+
+## Compatibility
+
+Each Hegemony release pins one release of this repository in its
+`.github/plugin-pins.json` and is built and tested against exactly that
+release. Install the release your platform pins; the newest one is on the
+[Releases page](https://github.com/hegemony-sh/hegemony-secret-plugins/releases).
+
+| Hegemony | hegemony-secret-plugins |
+| --- | --- |
+| 1.0.0 | 0.3.4 |
+
+Hegemony versions before 1.0.0 were not released publicly.
 
 ## Build a secret backend
 
