@@ -52,7 +52,17 @@ def _is_not_found(exc: Exception) -> bool:
         return status == 404
     match = _FOUND_COUNT_PATTERN.search(str(exc))
     # A multi-match ("Found 2 items") is an ambiguous title — a real error, not a miss.
-    return not (match and int(match.group(1)) > 1)
+    if match is None:
+        return True
+    # Only distinguish zero/one from many. Converting an unbounded count
+    # can hit Python's integer-string limit; each Unicode decimal digit
+    # matched by the regex is safe to convert on its own.
+    count = 0
+    for digit in match.group(1):
+        count = count * 10 + int(digit)
+        if count > 1:
+            return False
+    return True
 
 
 def _split_path(path: str) -> tuple[str, str]:

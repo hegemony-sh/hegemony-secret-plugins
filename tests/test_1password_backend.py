@@ -15,6 +15,7 @@ import hegemony_secret_1password as plugin
 from hegemony_secret_1password.connect_client import (
     OnePasswordConnectBackend,
     OnePasswordConnectConfig,
+    _is_not_found,
 )
 from hegemony_secret_1password.service_account_client import (
     OnePasswordServiceAccountBackend,
@@ -610,3 +611,17 @@ def test_service_account_ambiguous_vault_title_raises():
 
     with pytest.raises(ValueError, match="ambiguous"):
         backend.read("Engineering/Database")
+
+
+@pytest.mark.parametrize(
+    ("digits", "missing"),
+    [
+        ("9" * 5000, False),
+        ("0" * 5000, True),
+        ("0" * 5000 + "1", True),
+        ("0" * 5000 + "2", False),
+        ("٠" * 5000 + "٢", False),
+    ],
+)
+def test_connect_lookup_counts_do_not_require_unbounded_integer_conversion(digits, missing):
+    assert _is_not_found(Exception(f"Found {digits} items")) is missing
