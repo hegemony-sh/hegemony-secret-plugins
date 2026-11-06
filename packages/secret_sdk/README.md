@@ -33,6 +33,9 @@ instance directly from an already-resolved configuration dict:
 
 ```python
 # my_plugin/__init__.py
+from collections.abc import Mapping
+from typing import Any
+
 from hegemony_secret_sdk import SecretBackend, SecretBackendRegistry
 
 
@@ -41,7 +44,8 @@ class MyBackend:
         self._config = config
 
     def read(self, path: str) -> dict[str, str] | None: ...
-    def write(self, path: str, data: dict[str, str]) -> None: ...
+    def write(self, path: str, data: Mapping[str, Any]) -> None: ...
+    def delete(self, path: str) -> None: ...
     def test(self) -> None: ...
 
 
@@ -66,7 +70,7 @@ def register(registry: SecretBackendRegistry) -> None:
     )
 ```
 
-A backend implements `read`, `write`, and `test` (a lightweight connectivity/auth
+A backend implements `read`, `write`, `delete`, and `test` (a lightweight connectivity/auth
 check that raises on failure). See [`SecretBackend`](src/hegemony_secret_sdk/backend.py).
 
 ### Config-schema extension keys
@@ -89,3 +93,47 @@ The host understands a few `x_`-prefixed property keys in `config_schema`:
 `SDK_ABI_VERSION` is bumped only on incompatible changes to the registration
 contract. The platform exposes its value as `registry.api_version` so a plugin
 can self-gate if needed.
+
+## API reference
+
+Import public contracts from `hegemony_secret_sdk`. These are synchronous
+Python interfaces, not HTTP endpoints or coroutines. The host resolves
+configuration before calling the registered `BackendFactory(config)`, which
+returns a `SecretBackend`.
+
+`register_backend_type(...)` accepts keyword-only backend identity, display
+name, description and factory, plus optional configuration model, schema,
+defaults and hidden flag; it returns `None`. The model and schema are
+independent: the host may use the model for validation and the schema for UI
+rendering. The hidden flag requires host support.
+
+| Backend method | Inputs | Result |
+| --- | --- | --- |
+| `read` | Secret path string | Mapping of secret fields, or `None` if absent |
+| `write` | Path and mapping of fields | `None` |
+| `delete` | Path | `None`; deleting an absent secret is not an error |
+| `test` | No arguments | `None`; raises on connectivity/authentication failure |
+| `list` (optional `ListableSecretBackend`) | Path, defaulting to the empty string | Immediate child names; containers end in `/`; unknown/empty locations return an empty list |
+| `wrap_data_key` (optional `DataKeyWrappingSecretBackend`) | Wrapping-key name | Tuple of fresh 256-bit plaintext key bytes and wrapped-key string; creates a missing wrapping key |
+| `unwrap_data_key` (optional `DataKeyWrappingSecretBackend`) | Wrapping-key name and wrapped-key string | Plaintext key bytes |
+
+The host feature-detects the optional protocols. Data-key wrapping keeps the
+wrapping key inside the store; the host stores the wrapped key alongside
+encrypted data. Do not include plaintext secrets or data keys in logs or errors.
+Backend failures raise exceptions; the SDK does not define a shared error
+envelope. The [Vault/OpenBao](../../plugins/secret_vault/README.md) and
+[1Password](../../plugins/secret_1password/README.md) references describe
+backend configuration, path mapping and limitations.
+
+From the repository root, render complete signatures and docstrings with:
+
+```bash
+uv sync --frozen --all-packages
+uv run python -m pydoc hegemony_secret_sdk
+uv run python -m pydoc hegemony_secret_sdk.backend
+uv run python -m pydoc hegemony_secret_sdk.registry
+```
+
+For local HTML browsing, run `uv run python -m pydoc -b`, open the SDK module,
+and follow its class/module links; stop the server when finished. With an
+installed SDK, omit `uv run`.
