@@ -1,3 +1,9 @@
+## [0.3.5](https://github.com/hegemony-sh/hegemony-secret-plugins/compare/v0.3.4...v0.3.5) (2026-11-06)
+
+### Bug Fixes
+
+* **onepassword:** handle arbitrarily long lookup counts ([df20b18](https://github.com/hegemony-sh/hegemony-secret-plugins/commit/df20b187dbab7f1372a4cb7ed75acb615c60e21b))
+
 ## [0.3.4](https://github.com/hegemony-sh/hegemony-secret-plugins/compare/v0.3.3...v0.3.4) (2026-10-23)
 
 ### Bug Fixes
