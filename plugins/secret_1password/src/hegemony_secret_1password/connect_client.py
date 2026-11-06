@@ -260,7 +260,12 @@ class OnePasswordConnectBackend:
             if _is_not_found(exc):
                 return
             raise
-        self._client.delete_item(existing.id, vault_id)
+        try:
+            self._client.delete_item(existing.id, vault_id)
+        except FailedToRetrieveItemException as exc:
+            # Another caller can remove the item after the successful lookup.
+            if _extract_status_code(exc) != 404:
+                raise
 
     # builtins.list because the method name shadows the builtin in class scope.
     def list(self, path: str = "") -> builtins.list[str]:

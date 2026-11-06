@@ -33,6 +33,9 @@ instance directly from an already-resolved configuration dict:
 
 ```python
 # my_plugin/__init__.py
+from collections.abc import Mapping
+from typing import Any
+
 from hegemony_secret_sdk import SecretBackend, SecretBackendRegistry
 
 
@@ -41,7 +44,7 @@ class MyBackend:
         self._config = config
 
     def read(self, path: str) -> dict[str, str] | None: ...
-    def write(self, path: str, data: dict[str, str]) -> None: ...
+    def write(self, path: str, data: Mapping[str, Any]) -> None: ...
     def delete(self, path: str) -> None: ...
     def test(self) -> None: ...
 
@@ -111,7 +114,7 @@ rendering. The hidden flag requires host support.
 | `delete` | Path | `None`; deleting an absent secret is not an error |
 | `test` | No arguments | `None`; raises on connectivity/authentication failure |
 | `list` (optional `ListableSecretBackend`) | Path, defaulting to the empty string | Immediate child names; containers end in `/`; unknown/empty locations return an empty list |
-| `wrap_data_key` (optional `DataKeyWrappingSecretBackend`) | Wrapping-key name | Tuple of fresh 256-bit plaintext key bytes and wrapped-key string |
+| `wrap_data_key` (optional `DataKeyWrappingSecretBackend`) | Wrapping-key name | Tuple of fresh 256-bit plaintext key bytes and wrapped-key string; creates a missing wrapping key |
 | `unwrap_data_key` (optional `DataKeyWrappingSecretBackend`) | Wrapping-key name and wrapped-key string | Plaintext key bytes |
 
 The host feature-detects the optional protocols. Data-key wrapping keeps the

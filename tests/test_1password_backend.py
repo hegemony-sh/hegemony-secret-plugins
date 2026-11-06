@@ -625,3 +625,27 @@ def test_service_account_ambiguous_vault_title_raises():
 )
 def test_connect_lookup_counts_do_not_require_unbounded_integer_conversion(digits, missing):
     assert _is_not_found(Exception(f"Found {digits} items")) is missing
+
+
+@pytest.mark.parametrize("status", [404, 401, 403, 500, None])
+@pytest.mark.parametrize("structured_status", [False, True])
+def test_connect_delete_handles_only_404_after_lookup(status, structured_status):
+    from onepasswordconnectsdk.errors import FailedToRetrieveItemException
+
+    backend, client = _connect_backend_with_mock_client()
+    client.get_vaults.return_value = [_fake_connect_vault("v1", "Engineering")]
+    client.get_item.return_value = MagicMock(id="item-id")
+    error = FailedToRetrieveItemException(
+        "Unable to delete item."
+        if structured_status or status is None
+        else f"Unable to delete item. Received {status} for /v1/vaults",
+        status_code=status if structured_status else None,
+    )
+    client.delete_item.side_effect = error
+    if status == 404:
+        assert backend.delete("Engineering/Database") is None
+    else:
+        with pytest.raises(FailedToRetrieveItemException) as caught:
+            backend.delete("Engineering/Database")
+        assert caught.value is error
+    client.delete_item.assert_called_once_with("item-id", "v1")
