@@ -1,3 +1,9 @@
+## [0.3.6](https://github.com/hegemony-sh/hegemony-secret-plugins/compare/v0.3.5...v0.3.6) (2026-11-06)
+
+### Bug Fixes
+
+* **1password:** make concurrent deletion idempotent and clarify SDK docs ([ff89244](https://github.com/hegemony-sh/hegemony-secret-plugins/commit/ff89244c20186fdc2bab423188b1744c341e1551))
+
 ## [0.3.5](https://github.com/hegemony-sh/hegemony-secret-plugins/compare/v0.3.4...v0.3.5) (2026-11-06)
 
 ### Bug Fixes
