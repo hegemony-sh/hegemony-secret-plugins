@@ -18,8 +18,15 @@ details.
 
 ## Reporting a vulnerability
 
-Report vulnerabilities privately by emailing
-[security@hegemony.sh](mailto:security@hegemony.sh).
+Use [GitHub private vulnerability reporting](https://github.com/hegemony-sh/hegemony-secret-plugins/security/advisories/new)
+to report a vulnerability in this repository. The HTTPS form keeps the report
+private to the reporter and authorized advisory collaborators until publication.
+You can also open **Security → Advisories → Report a vulnerability** in this
+repository. A GitHub account is required.
+
+If you cannot use GitHub, email [security@hegemony.sh](mailto:security@hegemony.sh)
+for initial contact and to arrange a confidential way to share sensitive details.
+Do not send sensitive exploit details in unencrypted email or public issues.
 
 Please include as much detail as you can safely share:
 
