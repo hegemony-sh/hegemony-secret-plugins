@@ -643,7 +643,8 @@ def test_connect_delete_handles_only_404_after_lookup(status, structured_status)
     )
     client.delete_item.side_effect = error
     if status == 404:
-        assert backend.delete("Engineering/Database") is None
+        result = backend.delete("Engineering/Database")
+        assert result is None
     else:
         with pytest.raises(FailedToRetrieveItemException) as caught:
             backend.delete("Engineering/Database")
