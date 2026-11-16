@@ -11,10 +11,27 @@ readme = "README.md"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE-*.txt"]
 requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Systems Administration",
+]
 # Intentionally dependency-light: pydantic only. This package must never import
 # FastAPI, SQLAlchemy, Temporal, or any Hegemony app internals so out-of-tree
 # plugin wheels can depend on it without pulling the platform.
 dependencies = ["pydantic>=2.7"]
+
+[project.urls]
+Homepage = "https://hegemony.sh"
+Documentation = "https://hegemony.sh"
+Source = "https://github.com/hegemony-sh/hegemony-secret-plugins"
+Issues = "https://github.com/hegemony-sh/hegemony-secret-plugins/issues"
+Changelog = "https://github.com/hegemony-sh/hegemony-secret-plugins/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["uv_build>=0.9,<0.12"]

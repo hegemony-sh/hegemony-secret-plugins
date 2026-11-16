@@ -36,7 +36,7 @@ injects no services or context into a backend. The registered `factory`
 receives only an already-resolved configuration dict and returns a backend
 instance whose `read`/`write`/`test` methods talk directly to Vault.
 
-This package depends only on [`hegemony-secret-sdk`](../../packages/secret_sdk)
+This package depends only on [`hegemony-secret-sdk`](https://github.com/hegemony-sh/hegemony-secret-plugins/tree/main/packages/secret_sdk)
 and [`hvac`](https://pypi.org/project/hvac/) (the official HashiCorp Vault
 client); it never imports Hegemony platform internals.
 
@@ -44,7 +44,7 @@ client); it never imports Hegemony platform internals.
 
 The wheel is **auto-installed** with the platform — it is already bundled in the
 default Hegemony API and worker images, so no separate install step is needed
-there. See the root [Install From A Release](../../README.md#install-from-a-release)
+there. See the root [Install From A Release](https://github.com/hegemony-sh/hegemony-secret-plugins/blob/main/README.md#install-from-a-release)
 guide for Docker commands, checksum verification, and local-wheel development
 installs if you need to install or upgrade it manually. Both the **API** (to
 list/validate the backend type and resolve secrets) and the **worker** (to
