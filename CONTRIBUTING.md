@@ -165,12 +165,17 @@ commit in `.github/workflows/release.yml`, which runs
 [semantic-release](https://semantic-release.gitbook.io/):
 it reads the Conventional Commits since the last tag, derives the next
 version from them, bumps every package and SDK pin (`scripts/set_version.py`),
-refreshes `uv.lock`, builds and smoke-installs the wheels, prepends
-`CHANGELOG.md`, commits `chore(release): X.Y.Z [skip ci]`, tags `vX.Y.Z` and
-publishes the wheels plus `SHA256SUMS` as the GitHub Release. There is no
-manual step any more: do not bump versions or push `v*` tags by hand. The
-workflow needs a `RELEASE_TOKEN` repository or organization secret; the shared
-workflow fails fast with a clear message when it is empty.
+refreshes `uv.lock`, builds the wheels and sdists, smoke-installs the wheels,
+prepends `CHANGELOG.md`, commits `chore(release): X.Y.Z [skip ci]`, tags
+`vX.Y.Z` and publishes the wheels, sdists and `SHA256SUMS` as the GitHub
+Release. The `pypi` job of `release.yml` then uploads the same wheels and
+sdists to PyPI with trusted publishing and PEP 740 attestations; it runs in
+the `pypi` environment, so a maintainer approves it. That job lives in this
+repository's workflow because trusted publishing does not work inside a
+reusable workflow. There is no manual step any more: do not bump versions or
+push `v*` tags by hand. The workflow needs a `RELEASE_TOKEN` repository or
+organization secret; the shared workflow fails fast with a clear message when
+it is empty.
 
 | Commits since the last tag | Release |
 |---|---|
@@ -187,18 +192,22 @@ release a minor.
 
 Releases are immutable. The pipeline refuses to run when a GitHub Release for
 the next tag already exists and never replaces published assets: fix forward
-with a new commit, which becomes the next release. Attestations are created
-only while the repository is public, so a release cut while it was private
-ships checksums only.
+with a new commit, which becomes the next release. PyPI is immutable in the
+same way: a file once uploaded cannot be replaced, only yanked. Attestations
+are created only while the repository is public, so a release cut while it was
+private ships checksums only.
 
 One failure a re-run cannot repair: semantic-release pushes the release
 commit and the `vX.Y.Z` tag before it publishes the GitHub Release, so if
 publication fails after that push the tag exists without a Release, and the
 next run reads the tag as the last release. Maintainers publish that tag's
-assets by hand from a checkout of the tag: rebuild the wheels at that tag
-(`uv run python scripts/build_wheels.py`), write the checksums with
-`(cd dist && sha256sum *.whl > SHA256SUMS)`, and run
-`gh release create vX.Y.Z --verify-tag ... dist/*.whl dist/SHA256SUMS`.
+assets by hand from a checkout of the tag: rebuild the wheels and sdists at
+that tag (`uv run python scripts/build_wheels.py`), write the checksums with
+`(cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS)`, and run
+`gh release create vX.Y.Z --verify-tag ... dist/*.whl dist/*.tar.gz dist/SHA256SUMS`.
+The `pypi` job does not run in that case, because the workflow did not
+publish the Release, so that version reaches PyPI only through a separate
+upload.
 
 A change merged to the shared workflow reaches this repository through a pull
 request that bumps the pinned SHA.

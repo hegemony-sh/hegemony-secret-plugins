@@ -45,15 +45,17 @@ client); it never imports Hegemony platform internals.
 The wheel is **auto-installed** with the platform — it is already bundled in the
 default Hegemony API and worker images, so no separate install step is needed
 there. See the root [Install From A Release](https://github.com/hegemony-sh/hegemony-secret-plugins/blob/main/README.md#install-from-a-release)
-guide for Docker commands, checksum verification, and local-wheel development
-installs if you need to install or upgrade it manually. Both the **API** (to
+guide for Docker commands, checksum and attestation verification, and
+local-wheel development installs if you need to install or upgrade it manually. Both the **API** (to
 list/validate the backend type and resolve secrets) and the **worker** (to
 resolve secrets at run time) need the wheel installed into `/opt/venv`; restart
 both after installing so each registry reloads its entry points.
 
-The wheels are published on this repository's GitHub Releases, not on PyPI, so
-`uv pip install hegemony-secret-vault` finds nothing to install. For local development, work
-from a checkout of this repository, where the package is a workspace member:
+The package is on PyPI from the first release after 0.3.6:
+`uv pip install hegemony-secret-vault==X.Y.Z` or `pip install hegemony-secret-vault==X.Y.Z`.
+Releases up to and including 0.3.6 are only on this repository's GitHub
+Releases. For local development, work from a checkout of this repository,
+where the package is a workspace member:
 
 ```bash
 uv sync --all-packages
