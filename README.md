@@ -80,8 +80,9 @@ The packages are on PyPI:
 [`hegemony-secret-1password`](https://pypi.org/project/hegemony-secret-1password/).
 The release workflow uploads each release's wheels and sdists there with
 trusted publishing and [PEP 740](https://peps.python.org/pep-0740/)
-attestations, which PyPI shows on each file's page. Releases up to and
-including 0.3.6 were published before that and are only on the
+attestations, which PyPI shows on each file's page. 0.3.6 was uploaded to
+PyPI by hand from its GitHub Release, without PEP 740 attestations; earlier
+releases are only on the
 [Releases page](https://github.com/hegemony-sh/hegemony-secret-plugins/releases).
 Every GitHub Release still carries the same wheels and sdists, a `SHA256SUMS`
 file and the SLSA provenance bundle.
@@ -106,8 +107,8 @@ done
 Outside the images, `uv pip install hegemony-secret-1password==X.Y.Z` or
 `pip install hegemony-secret-1password==X.Y.Z` works the same way.
 
-To install from the GitHub Release instead, which is the only source for 0.3.6
-and earlier, download the wheel and check it against `SHA256SUMS` before
+To install from the GitHub Release instead, which is the only source for releases
+before 0.3.6, download the wheel and check it against `SHA256SUMS` before
 installing it:
 
 ```bash

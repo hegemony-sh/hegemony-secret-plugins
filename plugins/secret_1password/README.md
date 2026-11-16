@@ -71,9 +71,9 @@ installs. Both the **API** (to list/validate the backend type and resolve secret
 `/opt/venv`; restart both after installing so each registry reloads its entry
 points.
 
-The package is on PyPI from the first release after 0.3.6:
+The package is on PyPI from 0.3.6 on:
 `uv pip install hegemony-secret-1password==X.Y.Z` or `pip install hegemony-secret-1password==X.Y.Z`.
-Releases up to and including 0.3.6 are only on this repository's GitHub
+Earlier releases are only on this repository's GitHub
 Releases. For local development, work from a checkout of this repository,
 where the package is a workspace member:
 
