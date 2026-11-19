@@ -61,8 +61,8 @@ Licensing questions: [contact@hegemony.sh](mailto:contact@hegemony.sh).
 
 You need Python 3.11 or newer (CI runs 3.12) and [uv](https://docs.astral.sh/uv/);
 [Task](https://taskfile.dev/) is optional. You do not need a checkout of the
-Hegemony platform, and no Vault, OpenBao or 1Password server: the tests mock
-the clients.
+Hegemony platform, and no Vault, OpenBao, 1Password or Vaultwarden server: the
+tests mock the clients.
 
 ```bash
 git clone https://github.com/hegemony-sh/hegemony-secret-plugins.git
@@ -118,7 +118,7 @@ at most 20 characters, comma-separated).
 
 The commit type matters more here than in most projects, because **a merge to
 `main` is a release**: `fix`, `perf`, `revert` and `feat` publish a new version
-of all three packages, and the other types do not. The table under
+of every package, and the other types do not. The table under
 [Releasing](#releasing) lists them. Use `docs`, `ci`, `test`, `refactor` and
 `chore` for changes that must not ship, and `fix` or `feat` only for a change to
 the packages themselves.
@@ -142,11 +142,38 @@ server.
   Docker-style service names such as `vault` and `openbao`, and the private
   ranges of RFC 1918 for addresses.
 - Use made-up people and organizations (`alice`, `acme`), never real ones.
-- Never paste output captured from a real Vault, OpenBao or 1Password server.
-  Write the smallest response the test needs by hand.
+- Never paste output captured from a real Vault, OpenBao, 1Password or
+  Vaultwarden server. Write the smallest response the test needs by hand.
 
 If a scanner reports a fixture, change the fixture; do not suppress the finding
 unless it is a false positive, and then say why next to the suppression.
+
+## Live check against Vaultwarden
+
+The Vaultwarden backend speaks the Bitwarden client API, which is not a
+published contract and can change with a server release. The unit tests mock
+HTTP and cannot notice that. `scripts/live_check_vaultwarden.py` can: it
+registers throwaway accounts on a real server and runs every backend operation
+against them. It is not part of CI. Run it when you change
+`plugins/secret_bitwarden` and when a new Vaultwarden version comes out (it needs
+Docker), and name the server version you ran it against in the pull request:
+
+```bash
+docker run --rm -d --name vaultwarden-check -p 127.0.0.1:8087:80 \
+  -e I_REALLY_WANT_VOLATILE_STORAGE=true -e LOGIN_RATELIMIT_MAX_BURST=1000 \
+  vaultwarden/server:latest
+```
+
+```bash
+uv run python scripts/live_check_vaultwarden.py http://127.0.0.1:8087
+```
+
+```bash
+docker stop vaultwarden-check
+```
+
+Only ever point it at a server you can throw away. Every credential it uses is
+random and generated on the spot.
 
 ## Adding a backend
 
@@ -205,7 +232,7 @@ request that bumps the pinned SHA.
 
 ## Fuzzing
 
-Atheris targets in `fuzz/` exercise Vault Transit keys and timeout configuration, and 1Password reference paths and lookup errors.
+Atheris targets in `fuzz/` exercise Vault Transit keys and timeout configuration, 1Password reference paths and lookup errors, and Vaultwarden reference paths and encrypted-value parsing.
 Each target combines malformed raw inputs with generated valid cases and
 checks semantic properties. Targets use only synthetic data and perform no
 network requests, secret lookups or notification delivery.

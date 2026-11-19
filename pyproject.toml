@@ -34,12 +34,14 @@ members = [
     "packages/secret_sdk",
     "plugins/secret_vault",
     "plugins/secret_1password",
+    "plugins/secret_bitwarden",
 ]
 
 [tool.uv.sources]
 hegemony-secret-sdk = { workspace = true }
 hegemony-secret-vault = { workspace = true }
 hegemony-secret-1password = { workspace = true }
+hegemony-secret-bitwarden = { workspace = true }
 
 [tool.ruff]
 target-version = "py311"
@@ -56,6 +58,7 @@ known-first-party = [
     "hegemony_secret_sdk",
     "hegemony_secret_vault",
     "hegemony_secret_1password",
+    "hegemony_secret_bitwarden",
 ]
 
 [tool.ruff.format]
