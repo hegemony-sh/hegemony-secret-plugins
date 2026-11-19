@@ -8,9 +8,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 # Security Policy
 
 This repository holds the Hegemony secret-backend SDK and plugins
-(`hegemony-secret-sdk`, `hegemony-secret-vault`, `hegemony-secret-1password`).
-They handle the credentials Hegemony uses to reach HashiCorp Vault, OpenBao and
-1Password, so a vulnerability here can expose secrets.
+(`hegemony-secret-sdk`, `hegemony-secret-vault`, `hegemony-secret-1password`,
+`hegemony-secret-bitwarden`). They handle the credentials Hegemony uses to reach
+HashiCorp Vault, OpenBao, 1Password and Vaultwarden, so a vulnerability here can
+expose secrets.
 
 Security reports are handled privately. Please do not open a public GitHub issue
 for vulnerabilities, suspected vulnerabilities, leaked secrets, or exploit
@@ -30,30 +31,34 @@ Do not send sensitive exploit details in unencrypted email or public issues.
 
 Please include as much detail as you can safely share:
 
-- Affected package (`hegemony-secret-sdk`, `hegemony-secret-vault` or
-  `hegemony-secret-1password`) and version.
+- Affected package (`hegemony-secret-sdk`, `hegemony-secret-vault`,
+  `hegemony-secret-1password` or `hegemony-secret-bitwarden`) and version.
 - Backend type and the relevant configuration, with every credential removed.
 - Impact and attack scenario.
 - Reproduction steps or proof-of-concept details.
 - Whether the issue is already public or under active exploitation.
 - A safe way to contact you for follow-up.
 
-Do not include real tokens, role or secret IDs, service account tokens, private
-keys or customer data. Use placeholders.
+Do not include real tokens, role or secret IDs, service account tokens, API
+keys, master passwords, private keys or customer data. Use placeholders.
 
 ## What is in scope
 
-- The three packages in this repository, for example a credential that reaches a
+- The packages in this repository, for example a credential that reaches a
   log line or an error message, a bypass of TLS verification or of the
   `https://` requirement, a request that is redirected with the token attached,
   or a secret path that escapes its intended namespace.
+- The vault encryption code of `hegemony-secret-bitwarden`, for example a value
+  that is decrypted without its authentication code being checked, or key
+  material or plaintext that reaches a log line or an error message.
 - The release pipeline of these packages: the published wheels, their
   `SHA256SUMS` and their provenance attestation.
 
 Vulnerabilities in the Hegemony platform itself belong to the platform's
 [security policy](https://github.com/hegemony-sh/hegemony/blob/HEAD/SECURITY.md).
-Vulnerabilities in HashiCorp Vault, OpenBao, 1Password or in the client
-libraries these packages use (`hvac`, `onepasswordconnectsdk`, `onepassword-sdk`)
+Vulnerabilities in HashiCorp Vault, OpenBao, 1Password, Vaultwarden or in the
+libraries these packages use (`hvac`, `onepasswordconnectsdk`, `onepassword-sdk`,
+`cryptography`, `httpx`)
 should be reported to their own projects; tell us as well if the way these
 packages use them makes the problem worse.
 

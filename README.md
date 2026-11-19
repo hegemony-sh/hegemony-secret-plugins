@@ -25,6 +25,7 @@ never values; a secret backend is what resolves a reference at run time.
 | [`hegemony-secret-sdk`](packages/secret_sdk/README.md) | The public SDK a backend is written against: the `SecretBackend` protocol, the registry and the entry-point group. Depends only on `pydantic`. |
 | [`hegemony-secret-vault`](plugins/secret_vault/README.md) | HashiCorp Vault and OpenBao KV v2 backends (`vault`, the hidden legacy alias `vault_kv2`, and `openbao`), plus optional Transit data-key wrapping. |
 | [`hegemony-secret-1password`](plugins/secret_1password/README.md) | 1Password backends: `onepassword_connect` (Connect server) and `onepassword_service_account`. |
+| [`hegemony-secret-bitwarden`](plugins/secret_bitwarden/README.md) | Vaultwarden backend (`vaultwarden`): the items of one organization on a Vaultwarden or self-hosted Bitwarden server. |
 
 The SDK and all plugin wheels are released together under one semver tag,
 `vX.Y.Z`, cut automatically when a releasable change merges to `main`. Plugin wheels depend on the exact SDK version from the same release.
@@ -66,6 +67,9 @@ platform release.
   (`onepassword_connect` / `onepassword_service_account` backend types). Install it in any
   deployment that wants a 1Password-backed secrets backend. See its
   [README](plugins/secret_1password/README.md).
+- **Opt-in**: `hegemony-secret-bitwarden` adds the Vaultwarden backend (`vaultwarden`
+  backend type). Install it in any deployment that wants secrets from a Vaultwarden
+  server. See its [README](plugins/secret_bitwarden/README.md).
 
 Both the **API** (to list/validate the backend type and resolve secrets) and the
 **worker** (to resolve secrets at run time) must have an opt-in plugin installed to use it.
@@ -76,9 +80,12 @@ Restart both after installing so each registry reloads its entry points. Do not 
 
 Released wheels are published with a `SHA256SUMS` file. Verify downloaded wheels before
 installing them. `hegemony-secret-sdk` and `hegemony-secret-vault` are already in the API
-and worker images, so only the opt-in `hegemony-secret-1password` wheel is installed here.
-It is installed *with* dependencies so its 1Password SDKs (`onepasswordconnectsdk`,
-`onepassword-sdk`) are pulled in.
+and worker images, so only an opt-in wheel is installed here: `hegemony-secret-1password`
+in the example below. It is installed *with* dependencies so its 1Password SDKs
+(`onepasswordconnectsdk`, `onepassword-sdk`) are pulled in. For the Vaultwarden backend,
+put `hegemony_secret_bitwarden-\${version}-py3-none-any.whl` in the `for wheel in` list
+instead of, or next to, the 1Password wheel; its dependencies (`cryptography`, `httpx`)
+are pulled in the same way.
 
 ```bash
 VERSION=X.Y.Z   # a release tag without the leading v; see Compatibility
@@ -176,10 +183,11 @@ A backend does not have to live in this repository: any wheel that depends on
 (install it into the API and the worker, as above, and restart both). The
 [SDK README](packages/secret_sdk/README.md) has the entry-point declaration, a
 complete minimal backend (`read`, `write`, `test`), and the config-schema keys
-the host form understands. The two plugins here are worked examples:
+the host form understands. The plugins here are worked examples:
 [Vault and OpenBao](plugins/secret_vault/README.md) for a backend with several
-auth methods, and [1Password](plugins/secret_1password/README.md) for one that
-wraps an SDK.
+auth methods, [1Password](plugins/secret_1password/README.md) for one that
+wraps an SDK, and [Vaultwarden](plugins/secret_bitwarden/README.md) for one
+that speaks a store's HTTP API directly.
 
 ## Documentation
 

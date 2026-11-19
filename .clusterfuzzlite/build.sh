@@ -9,7 +9,7 @@
 # are installed with the SDK they pin, from this checkout, so the fuzzers
 # exercise the code of the pull request.
 
-pip3 install --no-cache-dir ./packages/secret_sdk ./plugins/secret_vault ./plugins/secret_1password
+pip3 install --no-cache-dir ./packages/secret_sdk ./plugins/secret_vault ./plugins/secret_1password ./plugins/secret_bitwarden
 
 python3 fuzz/seed_corpus.py build/fuzz-corpus
 
