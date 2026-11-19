@@ -286,18 +286,18 @@ def test_register_adds_the_vaultwarden_backend_type():
 
     reg = FakeRegistry()
     assert isinstance(reg, SecretBackendRegistry)
-    plugin.register(reg)
+    register(reg)
     assert set(reg.types) == {"vaultwarden"}
     entry = reg.types["vaultwarden"]
     assert entry["display_name"] and entry["description"]
-    assert entry["factory"] is plugin.build_vaultwarden_backend
+    assert entry["factory"] is build_vaultwarden_backend
     backend = entry["factory"](dict(BASE_CONFIG))
     assert isinstance(backend, ListableSecretBackend)
 
 
 def test_config_schema_marks_exactly_the_credentials_as_secret_refs():
     reg = FakeRegistry()
-    plugin.register(reg)
+    register(reg)
     schema = reg.types["vaultwarden"]["config_schema"]
     assert schema["required"] == [
         "server_url",
