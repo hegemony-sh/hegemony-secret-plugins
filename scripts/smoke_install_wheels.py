@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Install built wheels in a clean virtualenv and verify imports, entry points and licences."""
+"""Install the built wheels (not the sdists) in a clean virtualenv and verify imports, entry points and licences."""
 
 from __future__ import annotations
 

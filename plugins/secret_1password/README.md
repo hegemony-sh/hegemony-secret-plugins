@@ -52,7 +52,7 @@ asynchronous; it authenticates and runs all subsequent SDK calls on a dedicated
 background event-loop thread so its synchronous methods remain safe to call even
 from inside a host event loop.
 
-This package depends only on [`hegemony-secret-sdk`](../../packages/secret_sdk),
+This package depends only on [`hegemony-secret-sdk`](https://github.com/hegemony-sh/hegemony-secret-plugins/tree/main/packages/secret_sdk),
 [`onepasswordconnectsdk`](https://pypi.org/project/onepasswordconnectsdk/) (the
 official Connect client, used by `onepassword_connect`), and
 [`onepassword-sdk`](https://pypi.org/project/onepassword-sdk/) (the official
@@ -64,16 +64,18 @@ backend type.
 ## Install
 
 The wheel is **opt-in** — it is not bundled in the default images. See the root
-[Install From A Release](../../README.md#install-from-a-release) guide for Docker
-commands, checksum verification, and local-wheel development installs. Both the
-**API** (to list/validate the backend type and resolve secrets) and the
+[Install From A Release](https://github.com/hegemony-sh/hegemony-secret-plugins/blob/main/README.md#install-from-a-release) guide for Docker
+commands, checksum and attestation verification, and local-wheel development
+installs. Both the **API** (to list/validate the backend type and resolve secrets) and the
 **worker** (to resolve secrets at run time) need the wheel installed into
 `/opt/venv`; restart both after installing so each registry reloads its entry
 points.
 
-The wheels are published on this repository's GitHub Releases, not on PyPI, so
-`uv pip install hegemony-secret-1password` finds nothing to install. For local development, work
-from a checkout of this repository, where the package is a workspace member:
+The package is on PyPI from 0.3.6 on:
+`uv pip install hegemony-secret-1password==X.Y.Z` or `pip install hegemony-secret-1password==X.Y.Z`.
+Earlier releases are only on this repository's GitHub
+Releases. For local development, work from a checkout of this repository,
+where the package is a workspace member:
 
 ```bash
 uv sync --all-packages
