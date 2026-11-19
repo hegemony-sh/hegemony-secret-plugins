@@ -20,11 +20,12 @@ import pytest
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-import hegemony_secret_bitwarden as plugin
 from hegemony_secret_bitwarden import (
     VaultwardenBackend,
     VaultwardenConfig,
     backend as backend_module,
+    build_vaultwarden_backend,
+    register,
 )
 from hegemony_secret_bitwarden.backend import split_candidates
 from hegemony_secret_bitwarden.client import VaultwardenError, device_identifier, get_field
