@@ -331,8 +331,10 @@ def test_config_defaults_and_normalization():
 
 def test_config_repr_does_not_print_credentials():
     text = repr(VaultwardenConfig.from_dict(BASE_CONFIG))
+    assert text == (
+        "VaultwardenConfig(server_url='https://vault.example.com', <credentials redacted>)"
+    )
     assert PASSWORD not in text and CLIENT_SECRET not in text
-    assert "vault.example.com" in text
 
 
 @pytest.mark.parametrize(
