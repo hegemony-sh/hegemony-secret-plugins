@@ -32,7 +32,7 @@ jobs:
           python-version: '3.12'
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          version: '0.9.28'
+          version: '0.13.9'
       - name: Restore previous corpus
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
