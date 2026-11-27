@@ -34,9 +34,15 @@ split-on-first-`/` rule above such a path maps to the 1Password vault named
 and stay distinct per organization (the slug is part of the item title), but
 every organization's items land in that single `orgs` vault, and `list` does
 not browse below one path segment, so backend folder discovery is unavailable
-for org namespaces. For multi-tenant deployments prefer the Vault backend
-(which maps the org namespace onto a real path hierarchy), or register a
-dedicated 1Password backend per organization.
+for org namespaces.
+
+A plain `<vault>/<item>` path is outside `orgs/`. Hegemony gives such paths to
+the default organization only, so every other organization has to use the
+`orgs/<slug>/…` form above. Registering one 1Password backend per organization
+does not keep organizations apart: every backend is available to every
+organization, and only the path decides who may read a secret. For
+multi-tenant deployments prefer the Vault backend, which maps the org
+namespace onto a real path hierarchy.
 
 Secret backends are leaf components: unlike notification transports, the host
 injects no services or context into a backend. The registered `factory` receives
