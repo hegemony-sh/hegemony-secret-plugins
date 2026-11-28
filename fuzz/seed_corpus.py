@@ -10,11 +10,29 @@ import sys
 from pathlib import Path
 
 SOURCES = {
+    "bitwarden_fuzzer": "hegemony_secret_bitwarden.backend,hegemony_secret_bitwarden.crypto",
     "onepassword_fuzzer": "hegemony_secret_1password.connect_client,hegemony_secret_1password.service_account_client",
     "vault_inputs_fuzzer": "hegemony_secret_vault.vault_client",
 }
 
 SEEDS = {
+    "bitwarden_fuzzer": [
+        "Network/item",
+        "Network/Core/item",
+        "Network/Core",
+        "c2/item",
+        "a/b/c/d",
+        "/item",
+        "Network/",
+        "Missing/item",
+        "2.AAAA|AAAA|AAAA",
+        "2." + "A" * 22 + "==|" + "A" * 22 + "==|" + "A" * 43 + "=",
+        "0." + "A" * 22 + "==|" + "A" * 22 + "==",
+        "4.AAAA",
+        "²." + "A" * 4,
+        "9" * 5000 + ".AAAA",
+        "2.|||||",
+    ],
     "onepassword_fuzzer": [
         "vault/item",
         "vault/item/field",

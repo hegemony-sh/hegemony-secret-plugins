@@ -21,9 +21,10 @@ EXPECTED_MODULES = (
     "hegemony_secret_sdk",
     "hegemony_secret_vault",
     "hegemony_secret_1password",
+    "hegemony_secret_bitwarden",
 )
 
-EXPECTED_ENTRY_POINTS = {"vault", "onepassword"}
+EXPECTED_ENTRY_POINTS = {"vault", "onepassword", "bitwarden"}
 
 
 def expected_licenses() -> dict[str, str]:
@@ -42,8 +43,8 @@ def _python_bin(venv_dir: Path) -> Path:
 
 def main() -> None:
     wheels = sorted((ROOT / "dist").glob("*.whl"))
-    if len(wheels) != 3:
-        raise SystemExit(f"Expected 3 wheels in dist/, found {len(wheels)}")
+    if len(wheels) != len(PACKAGE_DIRS):
+        raise SystemExit(f"Expected {len(PACKAGE_DIRS)} wheels in dist/, found {len(wheels)}")
 
     tmp = Path(tempfile.mkdtemp(prefix="hegemony-secret-wheel-smoke-"))
     try:

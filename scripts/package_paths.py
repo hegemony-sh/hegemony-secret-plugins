@@ -13,6 +13,7 @@ PACKAGE_DIRS = (
     ROOT / "packages" / "secret_sdk",
     ROOT / "plugins" / "secret_vault",
     ROOT / "plugins" / "secret_1password",
+    ROOT / "plugins" / "secret_bitwarden",
 )
 
 PLUGIN_DIRS = PACKAGE_DIRS[1:]
