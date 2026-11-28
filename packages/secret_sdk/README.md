@@ -71,7 +71,7 @@ def register(registry: SecretBackendRegistry) -> None:
 ```
 
 A backend implements `read`, `write`, `delete`, and `test` (a lightweight connectivity/auth
-check that raises on failure). See [`SecretBackend`](src/hegemony_secret_sdk/backend.py).
+check that raises on failure). See [`SecretBackend`](https://github.com/hegemony-sh/hegemony-secret-plugins/blob/main/packages/secret_sdk/src/hegemony_secret_sdk/backend.py).
 
 ### Config-schema extension keys
 
@@ -121,8 +121,8 @@ The host feature-detects the optional protocols. Data-key wrapping keeps the
 wrapping key inside the store; the host stores the wrapped key alongside
 encrypted data. Do not include plaintext secrets or data keys in logs or errors.
 Backend failures raise exceptions; the SDK does not define a shared error
-envelope. The [Vault/OpenBao](../../plugins/secret_vault/README.md) and
-[1Password](../../plugins/secret_1password/README.md) references describe
+envelope. The [Vault/OpenBao](https://github.com/hegemony-sh/hegemony-secret-plugins/blob/main/plugins/secret_vault/README.md) and
+[1Password](https://github.com/hegemony-sh/hegemony-secret-plugins/blob/main/plugins/secret_1password/README.md) references describe
 backend configuration, path mapping and limitations.
 
 From the repository root, render complete signatures and docstrings with:

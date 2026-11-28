@@ -47,8 +47,9 @@ keys or customer data. Use placeholders.
   log line or an error message, a bypass of TLS verification or of the
   `https://` requirement, a request that is redirected with the token attached,
   or a secret path that escapes its intended namespace.
-- The release pipeline of these packages: the published wheels, their
-  `SHA256SUMS` and their provenance attestation.
+- The release pipeline of these packages: the published wheels and sdists on
+  the GitHub Releases and on PyPI, their `SHA256SUMS` and their provenance and
+  PyPI attestations.
 
 Vulnerabilities in the Hegemony platform itself belong to the platform's
 [security policy](https://github.com/hegemony-sh/hegemony/blob/HEAD/SECURITY.md).

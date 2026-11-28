@@ -36,7 +36,7 @@ injects no services or context into a backend. The registered `factory`
 receives only an already-resolved configuration dict and returns a backend
 instance whose `read`/`write`/`test` methods talk directly to Vault.
 
-This package depends only on [`hegemony-secret-sdk`](../../packages/secret_sdk)
+This package depends only on [`hegemony-secret-sdk`](https://github.com/hegemony-sh/hegemony-secret-plugins/tree/main/packages/secret_sdk)
 and [`hvac`](https://pypi.org/project/hvac/) (the official HashiCorp Vault
 client); it never imports Hegemony platform internals.
 
@@ -44,16 +44,22 @@ client); it never imports Hegemony platform internals.
 
 The wheel is **auto-installed** with the platform — it is already bundled in the
 default Hegemony API and worker images, so no separate install step is needed
-there. See the root [Install From A Release](../../README.md#install-from-a-release)
-guide for Docker commands, checksum verification, and local-wheel development
-installs if you need to install or upgrade it manually. Both the **API** (to
+there. See the root [Install From A Release](https://github.com/hegemony-sh/hegemony-secret-plugins/blob/main/README.md#install-from-a-release)
+guide for Docker commands, checksum and attestation verification, and
+local-wheel development installs if you need to install or upgrade it manually.
+Those commands install `hegemony-secret-1password`; for Vault, use
+`hegemony-secret-vault` as the package name (and
+`hegemony_secret_vault-${version}-py3-none-any.whl` as the wheel file) instead.
+Both the **API** (to
 list/validate the backend type and resolve secrets) and the **worker** (to
 resolve secrets at run time) need the wheel installed into `/opt/venv`; restart
 both after installing so each registry reloads its entry points.
 
-The wheels are published on this repository's GitHub Releases, not on PyPI, so
-`uv pip install hegemony-secret-vault` finds nothing to install. For local development, work
-from a checkout of this repository, where the package is a workspace member:
+The package is on PyPI from 0.3.6 on:
+`uv pip install hegemony-secret-vault==X.Y.Z` or `pip install hegemony-secret-vault==X.Y.Z`.
+Earlier releases are only on this repository's GitHub
+Releases. For local development, work from a checkout of this repository,
+where the package is a workspace member:
 
 ```bash
 uv sync --all-packages

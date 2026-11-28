@@ -165,12 +165,17 @@ commit in `.github/workflows/release.yml`, which runs
 [semantic-release](https://semantic-release.gitbook.io/):
 it reads the Conventional Commits since the last tag, derives the next
 version from them, bumps every package and SDK pin (`scripts/set_version.py`),
-refreshes `uv.lock`, builds and smoke-installs the wheels, prepends
-`CHANGELOG.md`, commits `chore(release): X.Y.Z [skip ci]`, tags `vX.Y.Z` and
-publishes the wheels plus `SHA256SUMS` as the GitHub Release. There is no
-manual step any more: do not bump versions or push `v*` tags by hand. The
-workflow needs a `RELEASE_TOKEN` repository or organization secret; the shared
-workflow fails fast with a clear message when it is empty.
+refreshes `uv.lock`, builds the wheels and sdists, smoke-installs the wheels,
+prepends `CHANGELOG.md`, commits `chore(release): X.Y.Z [skip ci]`, tags
+`vX.Y.Z` and publishes the wheels, sdists and `SHA256SUMS` as the GitHub
+Release. The `pypi` job of `release.yml` then uploads the same wheels and
+sdists to PyPI with trusted publishing and PEP 740 attestations; it runs in
+the `pypi` environment, so a maintainer approves it. That job lives in this
+repository's workflow because trusted publishing does not work inside a
+reusable workflow. There is no manual step any more: do not bump versions or
+push `v*` tags by hand. The workflow needs a `RELEASE_TOKEN` repository or
+organization secret; the shared workflow fails fast with a clear message when
+it is empty.
 
 | Commits since the last tag | Release |
 |---|---|
@@ -187,18 +192,56 @@ release a minor.
 
 Releases are immutable. The pipeline refuses to run when a GitHub Release for
 the next tag already exists and never replaces published assets: fix forward
-with a new commit, which becomes the next release. Attestations are created
-only while the repository is public, so a release cut while it was private
-ships checksums only.
+with a new commit, which becomes the next release. PyPI is immutable in the
+same way: a file once uploaded cannot be replaced, only yanked. Attestations
+are created only while the repository is public, so a release cut while it was
+private ships checksums only.
 
 One failure a re-run cannot repair: semantic-release pushes the release
 commit and the `vX.Y.Z` tag before it publishes the GitHub Release, so if
 publication fails after that push the tag exists without a Release, and the
 next run reads the tag as the last release. Maintainers publish that tag's
-assets by hand from a checkout of the tag: rebuild the wheels at that tag
-(`uv run python scripts/build_wheels.py`), write the checksums with
-`(cd dist && sha256sum *.whl > SHA256SUMS)`, and run
-`gh release create vX.Y.Z --verify-tag ... dist/*.whl dist/SHA256SUMS`.
+assets by hand from a checkout of the tag: rebuild the wheels and sdists at
+that tag (`uv run python scripts/build_wheels.py`), write the checksums with
+`(cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS)`, and run
+`gh release create vX.Y.Z --verify-tag ... dist/*.whl dist/*.tar.gz dist/SHA256SUMS`.
+The `pypi` job does not run in that case, because the workflow did not
+publish the Release, so that version reaches PyPI only through a separate
+upload.
+
+When the `pypi` job cannot do the upload, a maintainer uploads that Release's
+files to PyPI by hand. This covers a tag recovered by hand (the job does not
+run for it), a Release cut while the repository was private (it has no
+attestations, and the job refuses files without one), and a failed `pypi` job
+whose run is older than 30 days (GitHub no longer re-runs it):
+
+```bash
+(
+  set -euo pipefail
+  mkdir pypi-upload
+  cd pypi-upload
+  gh release download vX.Y.Z --repo hegemony-sh/hegemony-secret-plugins \
+    --pattern '*.whl' --pattern '*.tar.gz' --pattern SHA256SUMS
+  sha256sum --check --strict SHA256SUMS
+  shopt -s nullglob
+  files=(*.whl *.tar.gz)
+  for file in "${files[@]}"; do
+    awk -v f="$file" '$2 == f {found = 1} END {exit !found}' SHA256SUMS || { echo "${file} is not in SHA256SUMS" >&2; exit 1; }
+  done
+  TWINE_USERNAME=__token__ uvx twine upload --skip-existing "${files[@]}"
+)
+```
+
+The subshell stops at the first failed step, so nothing is uploaded unless
+every file downloaded, matched `SHA256SUMS` and is listed there.
+
+Check the files with `gh attestation verify` first when the Release has
+attestations. A PyPI token scoped to one project can upload only that
+project, and the command above uploads every project in the Release. So
+either create a short-lived account-wide token, paste it when twine asks for
+the password and delete it right after, or keep project tokens and run the
+upload once per project with only that project's files. A hand upload
+carries no PEP 740 attestations.
 
 A change merged to the shared workflow reaches this repository through a pull
 request that bumps the pinned SHA.
