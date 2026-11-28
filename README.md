@@ -101,12 +101,14 @@ VERSION=X.Y.Z   # a release tag without the leading v; see Compatibility
 API_CONTAINER=<your API container name>
 WORKER_CONTAINER=<your worker container name>
 
+failed=
 for CONTAINER in "${API_CONTAINER}" "${WORKER_CONTAINER}"; do
   docker exec -u root -it "${CONTAINER}" bash -lc \
     "uv pip install --python /opt/venv/bin/python hegemony-secret-1password==${VERSION}"
-  [ $? -eq 0 ] || { echo "Install failed in ${CONTAINER}; not restarting it." >&2; break; }
+  [ $? -eq 0 ] || { echo "Install failed in ${CONTAINER}; not restarting it." >&2; failed=1; break; }
   docker restart "${CONTAINER}"
 done
+[ -z "${failed}" ]   # non-zero exit status if an install failed
 ```
 
 Outside the images, `uv pip install hegemony-secret-1password==X.Y.Z` or
@@ -121,6 +123,7 @@ VERSION=X.Y.Z   # a release tag without the leading v; see Compatibility
 API_CONTAINER=<your API container name>
 WORKER_CONTAINER=<your worker container name>
 
+failed=
 for CONTAINER in "${API_CONTAINER}" "${WORKER_CONTAINER}"; do
   docker exec -u root -it "${CONTAINER}" bash -lc "
 set -euo pipefail
@@ -138,9 +141,10 @@ done
 uv pip install --python /opt/venv/bin/python ./*.whl
 rm -rf \"\${tmp}\"
 "
-  [ $? -eq 0 ] || { echo "Install failed in ${CONTAINER}; not restarting it." >&2; break; }
+  [ $? -eq 0 ] || { echo "Install failed in ${CONTAINER}; not restarting it." >&2; failed=1; break; }
   docker restart "${CONTAINER}"
 done
+[ -z "${failed}" ]   # non-zero exit status if an install failed
 ```
 
 For a stronger supply-chain guarantee than checksums alone, also verify the build
@@ -180,6 +184,7 @@ Or build local wheels from this repository and copy them into the running dev co
 cd ../hegemony-secret-plugins
 task build
 
+failed=
 for CONTAINER in hegemony-dev-api-1 hegemony-dev-worker-1; do
   docker exec -u root "${CONTAINER}" mkdir -p /tmp/secret-wheels
   docker cp dist/. "${CONTAINER}:/tmp/secret-wheels/"
@@ -187,9 +192,10 @@ for CONTAINER in hegemony-dev-api-1 hegemony-dev-worker-1; do
   uv pip install --python /opt/venv/bin/python \
     /tmp/secret-wheels/hegemony_secret_1password-*.whl
   '
-  [ $? -eq 0 ] || { echo "Install failed in ${CONTAINER}; not restarting it." >&2; break; }
+  [ $? -eq 0 ] || { echo "Install failed in ${CONTAINER}; not restarting it." >&2; failed=1; break; }
   docker restart "${CONTAINER}"
 done
+[ -z "${failed}" ]   # non-zero exit status if an install failed
 ```
 
 These Docker-command installs are runtime changes. Re-run them after recreating a container
