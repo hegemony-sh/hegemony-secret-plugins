@@ -46,7 +46,11 @@ The wheel is **auto-installed** with the platform — it is already bundled in t
 default Hegemony API and worker images, so no separate install step is needed
 there. See the root [Install From A Release](https://github.com/hegemony-sh/hegemony-secret-plugins/blob/main/README.md#install-from-a-release)
 guide for Docker commands, checksum and attestation verification, and
-local-wheel development installs if you need to install or upgrade it manually. Both the **API** (to
+local-wheel development installs if you need to install or upgrade it manually.
+Those commands install `hegemony-secret-1password`; for Vault, use
+`hegemony-secret-vault` as the package name (and
+`hegemony_secret_vault-${version}-py3-none-any.whl` as the wheel file) instead.
+Both the **API** (to
 list/validate the backend type and resolve secrets) and the **worker** (to
 resolve secrets at run time) need the wheel installed into `/opt/venv`; restart
 both after installing so each registry reloads its entry points.

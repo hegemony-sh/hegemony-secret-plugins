@@ -84,8 +84,12 @@ attestations, which PyPI shows on each file's page. 0.3.6 was uploaded to
 PyPI by hand from its GitHub Release, without PEP 740 attestations; earlier
 releases are only on the
 [Releases page](https://github.com/hegemony-sh/hegemony-secret-plugins/releases).
-Every GitHub Release still carries the same wheels and sdists, a `SHA256SUMS`
-file and the SLSA provenance bundle.
+From the first release after 0.3.6, every GitHub Release carries the same
+wheels and sdists and a `SHA256SUMS` file; earlier Releases carry only the
+wheels and `SHA256SUMS`. A Release cut by the release workflow while the
+repository is public also carries the SLSA provenance bundle; a Release
+recovered by hand (see [CONTRIBUTING.md](https://github.com/hegemony-sh/hegemony-secret-plugins/blob/main/CONTRIBUTING.md))
+has none.
 
 `hegemony-secret-sdk` and `hegemony-secret-vault` are already in the API and
 worker images, so only the opt-in `hegemony-secret-1password` package is
