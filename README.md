@@ -104,6 +104,7 @@ WORKER_CONTAINER=<your worker container name>
 for CONTAINER in "${API_CONTAINER}" "${WORKER_CONTAINER}"; do
   docker exec -u root -it "${CONTAINER}" bash -lc \
     "uv pip install --python /opt/venv/bin/python hegemony-secret-1password==${VERSION}"
+  [ $? -eq 0 ] || { echo "Install failed in ${CONTAINER}; not restarting it." >&2; break; }
   docker restart "${CONTAINER}"
 done
 ```
@@ -137,6 +138,7 @@ done
 uv pip install --python /opt/venv/bin/python ./*.whl
 rm -rf \"\${tmp}\"
 "
+  [ $? -eq 0 ] || { echo "Install failed in ${CONTAINER}; not restarting it." >&2; break; }
   docker restart "${CONTAINER}"
 done
 ```
@@ -185,6 +187,7 @@ for CONTAINER in hegemony-dev-api-1 hegemony-dev-worker-1; do
   uv pip install --python /opt/venv/bin/python \
     /tmp/secret-wheels/hegemony_secret_1password-*.whl
   '
+  [ $? -eq 0 ] || { echo "Install failed in ${CONTAINER}; not restarting it." >&2; break; }
   docker restart "${CONTAINER}"
 done
 ```

@@ -209,6 +209,24 @@ The `pypi` job does not run in that case, because the workflow did not
 publish the Release, so that version reaches PyPI only through a separate
 upload.
 
+When the `pypi` job cannot do the upload, a maintainer uploads that Release's
+files to PyPI by hand. This covers a tag recovered by hand (the job does not
+run for it), a Release cut while the repository was private (it has no
+attestations, and the job refuses files without one), and a failed `pypi` job
+whose run is older than 30 days (GitHub no longer re-runs it):
+
+```bash
+gh release download vX.Y.Z --repo hegemony-sh/hegemony-secret-plugins --dir pypi-upload \
+  --pattern '*.whl' --pattern '*.tar.gz' --pattern SHA256SUMS
+cd pypi-upload && sha256sum --check --strict SHA256SUMS && rm SHA256SUMS
+TWINE_USERNAME=__token__ uvx twine upload --skip-existing $(ls *.whl *.tar.gz 2>/dev/null)
+```
+
+Check the files with `gh attestation verify` first when the Release has
+attestations. Use a PyPI API token scoped to the affected projects, paste it
+when twine asks for the password, and delete it afterwards. A hand upload
+carries no PEP 740 attestations.
+
 A change merged to the shared workflow reaches this repository through a pull
 request that bumps the pinned SHA.
 
